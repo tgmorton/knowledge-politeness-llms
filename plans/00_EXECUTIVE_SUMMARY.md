@@ -95,20 +95,21 @@ This will enable:
 
 ## Resource Requirements
 
-### Compute
-- **GPUs**: 8-10 NVIDIA A100 GPUs (40GB or 80GB)
-- **CPUs**: ~200 cores total
-- **Memory**: ~800GB RAM total
+### Compute (Sequential Deployment)
+- **Peak GPUs**: 2-4 NVIDIA A100 GPUs (one model deployed at a time)
+- **CPUs**: ~40 cores per model
+- **Memory**: ~128GB RAM per model (high RAM exception may be needed for some models)
 - **Storage**: 600GB persistent storage
 
 ### Time Estimates
-- **Setup & Testing**: 2-3 weeks
+- **Setup & Testing**: 1-2 weeks (local dev → RTX 3090 testing → A100 production)
+- **Model Deployment**: 1 day per model × 6 models = 6 days total (sequential)
 - **Experiment Execution**: 1-2 days per run
 - **Analysis**: 1 week
-- **Total Project**: 6-9 weeks
+- **Total Project**: 4-6 weeks
 
 ### NRP GPU Hours
-- **Estimated**: ~1,860 GPU-hours for full experiments
+- **Estimated**: ~168 GPU-hours per model × 6 models = ~1,000 GPU-hours total
 - **Cost**: Free on NRP (subject to allocation)
 
 ---
@@ -128,61 +129,68 @@ This will enable:
 
 ## Recommended Models
 
-### Final Lineup (Budget-Conscious)
+### Final Lineup (Sequential Deployment)
 
 | Model | Size | GPU | Use Case | Priority |
 |-------|------|-----|----------|----------|
 | Gemma 2 - 2B | 2B | 1x A100 40GB | Fast baseline | High |
 | Gemma 2 - 9B | 9B | 1x A100 40GB | Mid-range quality | High |
 | Llama 3.1 - 8B | 8B | 1x A100 40GB | Alternative mid-range | Medium |
-| Llama 3.1 - 70B | 70B | 4x A100 40GB | High quality | High |
+| Llama 3.1 - 70B | 70B | 2x A100 80GB | High quality | High |
 | DeepSeek-V3 | 37B active | 2x A100 80GB | Structured extraction | High |
 
-**Total**: 8x A100 40GB + 2x A100 80GB
+**Deployment Strategy**: Deploy one model at a time, run experiments, tear down, deploy next model
 
-### Alternatives if GPU-constrained
-- Use quantized models (AWQ 4-bit) to fit larger models on fewer GPUs
-- Drop Llama-70B and use only smaller models
-- Use DeepSeek API instead of self-hosting
+**Peak Resources**: 2x A100 80GB (for Llama-70B or DeepSeek-V3)
+
+### NRP Exception Requirements
+- **High RAM**: May be needed for Llama-70B and DeepSeek-V3 (128GB+ RAM)
+- **2-GPU**: Needed for Llama-70B and DeepSeek-V3
+- **No deployment duration exception needed**: Each model deployed <1 day sequentially
 
 ---
 
 ## Implementation Phases
 
-### Phase 0: Preparation (Week 1)
-- Set up NRP access and development environment
+### Phase 0: Local Development (Week 1)
+- Set up local development environment
 - Test model downloads and vLLM locally
 - Create project structure
+- Test Python scripts with small datasets
 
-### Phase 1: Docker Images (Week 2)
-- Build query generator, probability extractor, structured output extractor
-- Test locally with small datasets
-- Push to container registry
+### Phase 1: RTX 3090 Testing (Week 2)
+- Deploy to RTX 3090 for initial testing
+- Validate Docker images and Kubernetes configs
+- Run pilot experiments with 1-2 models
+- Debug and optimize performance
 
-### Phase 2: Model Deployment (Week 3)
-- Deploy vLLM StatefulSets for all models
-- Validate endpoints and performance
-- Run smoke tests
+### Phase 2: Sequential A100 Deployment (Days 1-6)
+- **Day 1**: Deploy Gemma-2B, run experiments, tear down
+- **Day 2**: Deploy Gemma-9B, run experiments, tear down
+- **Day 3**: Deploy Llama-8B, run experiments, tear down
+- **Day 4**: Deploy Llama-70B, run experiments, tear down
+- **Day 5**: Deploy DeepSeek-V3, run experiments, tear down
+- **Day 6**: Buffer for any reruns or issues
 
-### Phase 3: Experiment 1 (Week 4)
-- Execute raw response generation for Study 1 & 2
-- Run structured output extraction
+### Phase 3: Experiment 1 - Raw Text Generation
+- Generate raw text responses (included in each model's deployment day)
+- Run structured output extraction with DeepSeek
 - Validate data quality
 
-### Phase 4: Experiment 2 (Week 5)
-- Execute probability extraction for Study 1 & 2
+### Phase 4: Experiment 2 - Probability Extraction
+- Extract probability distributions (included in each model's deployment day)
 - Validate probability distributions
 - Compare with Experiment 1 results
 
-### Phase 5: Analysis (Week 6)
+### Phase 5: Analysis (Week 4)
 - Adapt R scripts for multiple models
 - Generate comparative visualizations
 - Run statistical analyses
 
-### Phase 6: Cleanup & Documentation (Week 7)
+### Phase 6: Documentation (Week 4-5)
 - Archive data and code
 - Write reproducibility guide
-- Clean up cluster resources
+- Document lessons learned
 
 ---
 
@@ -195,10 +203,11 @@ This will enable:
 4. **Error Handling**: Implement robust retry logic and checkpointing
 
 ### Operational
-1. **NRP Rules**: Follow NRP cluster policies and quotas
-2. **GPU Scheduling**: Efficiently pack models onto available GPUs
+1. **NRP Rules**: Follow NRP cluster policies (sequential deployment, proper teardown)
+2. **Sequential Workflow**: Deploy one model at a time, complete all experiments, tear down before next
 3. **Data Management**: Preserve data integrity with PVCs and backups
 4. **Monitoring**: Track job progress and model performance
+5. **Phased Testing**: Validate on local → RTX 3090 → A100 before production runs
 
 ### Research
 1. **Prompt Consistency**: Use same prompts across models for fair comparison
@@ -279,13 +288,14 @@ Follow Phase 0 checklist in `03_IMPLEMENTATION_ROADMAP.md`
 
 | Risk | Impact | Mitigation |
 |------|--------|------------|
-| Insufficient GPU quota | High | Request quota increase early, use quantization |
-| Model OOM errors | High | Start with smaller models, tune memory settings |
+| Insufficient GPU quota | Low | Sequential deployment requires only 2-4 GPUs peak |
+| Model OOM errors | Medium | Test on RTX 3090 first, tune memory settings |
 | Job failures | Medium | Implement checkpointing and retry logic |
 | Data corruption | High | Use PVCs with backups, validate outputs |
 | API rate limits (DeepSeek) | Medium | Self-host or batch requests |
 | Slow inference | Medium | Optimize batch sizes, use vLLM features |
 | Extraction failures | Medium | Improve prompts, manual review threshold |
+| Sequential delays | Medium | 6-day window provides buffer for issues |
 
 ---
 
@@ -313,29 +323,29 @@ Follow Phase 0 checklist in `03_IMPLEMENTATION_ROADMAP.md`
 ## Next Actions
 
 ### Immediate (This Week)
-1. [ ] Contact NRP to confirm GPU availability and quotas
-2. [ ] Set up kubectl access to NRP cluster
-3. [ ] Test vLLM with Gemma-2B locally
+1. [ ] Set up local development environment
+2. [ ] Test vLLM with Gemma-2B locally
+3. [ ] Request NRP exceptions (high RAM for 2 models, 2-GPU for 2 models)
 4. [ ] Make final decision on model lineup
 5. [ ] Review all planning documents with team
 
-### Short-term (Next 2 Weeks)
+### Short-term (Week 2)
 1. [ ] Implement Python scripts for query generation
 2. [ ] Build Docker images
 3. [ ] Create Kubernetes manifests
-4. [ ] Deploy first model to NRP
-5. [ ] Run pilot test with 10 rows
+4. [ ] Deploy to RTX 3090 for testing
+5. [ ] Run pilot test with 1-2 models on 10 rows
 
-### Medium-term (Weeks 3-5)
-1. [ ] Deploy all models
-2. [ ] Execute Experiment 1
-3. [ ] Execute Experiment 2
-4. [ ] Validate all outputs
+### Medium-term (Week 3)
+1. [ ] Execute sequential A100 deployment (6 days, one model per day)
+2. [ ] Run both experiments for each model
+3. [ ] Validate all outputs
+4. [ ] Archive data after each model
 
-### Long-term (Weeks 6-7)
+### Long-term (Week 4-5)
 1. [ ] Run analyses and generate visualizations
 2. [ ] Write up results
-3. [ ] Archive data and clean up cluster
+3. [ ] Document lessons learned
 4. [ ] Submit for publication
 
 ---
@@ -362,17 +372,17 @@ Follow Phase 0 checklist in `03_IMPLEMENTATION_ROADMAP.md`
 
 As an opinionated engineer, here's what I recommend:
 
-### Start Simple, Scale Up
-1. **Don't try to deploy all models at once**. Start with Gemma-2B, validate the entire pipeline end-to-end with 10 rows, then scale.
+### Sequential Deployment is Key
+1. **Deploy one model at a time**. This is NRP-compliant and reduces complexity. Complete all experiments for one model, archive the data, tear down, then move to the next.
 
-2. **Use DeepSeek API initially**. Self-hosting is complex; validate your extraction prompts with the API first. You can always switch to self-hosted later if cost becomes an issue.
+2. **Follow the phased testing approach**: Local → RTX 3090 → A100. Don't skip straight to A100. Catch issues early when debugging is easier.
 
-3. **Skip Argo Workflows initially**. Use simple Kubernetes Jobs first. Only add Argo if you need complex dependencies and retries.
+3. **Use DeepSeek API initially**. Self-hosting is complex; validate your extraction prompts with the API first. You can always switch to self-hosted later if cost becomes an issue.
 
-4. **Prefer smaller, quantized models over fewer large models**. A 4-bit quantized 70B model on 2 GPUs is often better than a fp16 70B on 4 GPUs for your use case.
+4. **Skip Argo Workflows initially**. Use simple Kubernetes Jobs first. Only add Argo if you need complex dependencies and retries.
 
 ### Prioritize Robustness Over Speed
-1. **Checkpoint aggressively**. Save after every batch, even if it's slower.
+1. **Checkpoint aggressively**. Save after every batch, even if it's slower. With sequential deployment, you can't easily re-run a model.
 
 2. **Log everything**. You'll thank yourself when debugging at 2 AM.
 
@@ -385,27 +395,31 @@ As an opinionated engineer, here's what I recommend:
 
 3. **Keep raw responses**. Always save the raw model output before structuring. You might want to re-extract with different prompts.
 
-### Watch Your GPU Budget
-- Gemma-2B and Gemma-9B will give you 80% of the insights at 20% of the GPU cost
-- Only spin up Llama-70B when you need to validate findings from smaller models
-- Turn off model pods when not actively querying them
+### Sequential Deployment Benefits
+- **NRP Compliant**: No need for >2 week deployment exception
+- **Lower GPU quota**: Only 2-4 GPUs at peak vs 8-10 simultaneously
+- **Easier debugging**: Focus on one model at a time
+- **Lower risk**: Issues with one model don't block others
+- **Total time**: Still only 6 days for all models (vs weeks of simultaneous deployment)
 
 ### Key Insight
-The hardest part won't be the infrastructure—it will be **prompt engineering** to get consistent structured outputs. Budget extra time for this. Run lots of small tests before committing to 2,424 row runs.
+The hardest part won't be the infrastructure—it will be **prompt engineering** to get consistent structured outputs. Budget extra time for this. Run lots of small tests before committing to 2,424 row runs. The sequential approach gives you time to refine prompts between models.
 
 ---
 
 ## Conclusion
 
-This planning package provides everything needed to execute the Grace Project experiments on NRP. The architecture is proven (vLLM + Kubernetes is battle-tested), the resource requirements are realistic, and the phased approach reduces risk.
+This planning package provides everything needed to execute the Grace Project experiments on NRP. The architecture is proven (vLLM + Kubernetes is battle-tested), the resource requirements are realistic and NRP-compliant, and the sequential deployment approach reduces risk and complexity.
 
-**Estimated effort**: 6-9 weeks with one engineer working full-time
+**Estimated effort**: 4-6 weeks with one engineer working full-time
 
-**Complexity**: Medium-High (requires Kubernetes, ML, and data processing skills)
+**Complexity**: Medium (sequential deployment simplifies orchestration)
 
-**Risk level**: Medium (manageable with proper testing and incremental deployment)
+**Risk level**: Low-Medium (phased testing and sequential approach minimize issues)
 
 **Expected outcome**: High-quality dataset enabling novel cross-model comparisons
+
+**NRP Compliance**: Sequential deployment requires only 2-4 GPUs peak, ~1,000 GPU-hours total, and no deployment duration exceptions
 
 ---
 

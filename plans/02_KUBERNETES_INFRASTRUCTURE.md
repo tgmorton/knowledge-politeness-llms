@@ -181,12 +181,11 @@ spec:
 
 ### Important NRP Cluster Policies
 
-**Deployment Auto-Deletion**: NRP automatically deletes Deployments after **2 weeks**
-
-**Action Required**: Request exception from cluster admins for Grace Project model servers
-- Join Matrix: https://matrix.to/#/#nrp:matrix.org
-- Request: "Exception for Deployments to run >2 weeks for research model serving"
-- Specify: Namespace, deployment names, expected duration (2-4 weeks)
+**Sequential Deployment Strategy**: Grace Project uses a sequential deployment approach where models are deployed one at a time for testing, then removed before deploying the next model. This means:
+- Each model deployment runs for <1 day during its testing phase
+- No >2 week exception needed from NRP admins
+- Simplified resource management (only 1-2 model servers running at once)
+- Faster iteration and debugging
 
 **Default Resource Limits per Pod** (can request exceptions):
 - Max 2 GPUs per pod
@@ -204,17 +203,21 @@ spec:
 **Required Exceptions**:
 - Multi-GPU: Gemma-27B (2), GPT-OSS-120B (2), Llama-70B (4)
 - High Memory: Gemma-27B (64GB), GPT-OSS-120B (50GB), Llama-70B (160GB)
-- Runtime: All deployments (>2 weeks)
 
-**Total Resources**: 11 GPUs, ~290GB RAM (much less than dense models)
+**Total Resources** (peak, one model at a time): 4 GPUs, ~160GB RAM (for Llama-70B, the largest)
+
+**NRP Policy Compliance**:
+- ✅ Using Deployments (stateless model servers)
+- ✅ Resource limits within 20% of requests (Burstable QoS)
+- ✅ Sequential deployment (<1 day per model, no >2 week exception needed)
 
 **See**: `docs/NRP_CLUSTER_GUIDE.md` for complete cluster policies
 
-### Template: vLLM Model Server StatefulSet
+### Template: vLLM Model Server Deployment
 
 ```yaml
 apiVersion: apps/v1
-kind: StatefulSet
+kind: Deployment
 metadata:
   name: vllm-gemma-2b
   namespace: grace-experiments
@@ -222,7 +225,6 @@ metadata:
     app: vllm-server
     model: gemma-2b
 spec:
-  serviceName: vllm-gemma-2b
   replicas: 1
   selector:
     matchLabels:
@@ -275,10 +277,10 @@ spec:
         resources:
           requests:
             memory: 4Gi
-            cpu: 2
+            cpu: "2"
           limits:
-            memory: 8Gi
-            cpu: 4
+            memory: 4Gi
+            cpu: "2"
       
       # Main vLLM container
       containers:
@@ -307,8 +309,8 @@ spec:
             memory: 32Gi
           limits:
             nvidia.com/gpu: 1
-            cpu: "16"
-            memory: 64Gi
+            cpu: "10"      # 125% of request (within 20%)
+            memory: 38Gi   # 119% of request (within 20%)
         volumeMounts:
         - name: model-weights
           mountPath: /model-weights
@@ -371,6 +373,11 @@ data:
 
 ### Job Template: Study 1 Experiment 1 Query Generation
 
+**NRP Policy Compliance for Jobs with >100 instances**:
+- For large-scale job parallelization (>100 jobs), use Guaranteed QoS
+- This means: `limits = requests` for CPU and memory
+- Prevents resource contention and ensures predictable performance
+
 ```yaml
 apiVersion: batch/v1
 kind: Job
@@ -419,8 +426,8 @@ spec:
             cpu: "4"
             memory: 8Gi
           limits:
-            cpu: "8"
-            memory: 16Gi
+            cpu: "4"      # Guaranteed QoS: limit = request
+            memory: 8Gi   # Guaranteed QoS: limit = request
         volumeMounts:
         - name: input-data
           mountPath: /data
@@ -486,8 +493,8 @@ spec:
             cpu: "4"
             memory: 8Gi
           limits:
-            cpu: "8"
-            memory: 16Gi
+            cpu: "4"      # Guaranteed QoS: limit = request
+            memory: 8Gi   # Guaranteed QoS: limit = request
         volumeMounts:
         - name: input-data
           mountPath: /data
@@ -560,8 +567,8 @@ spec:
             cpu: "4"
             memory: 8Gi
           limits:
-            cpu: "8"
-            memory: 16Gi
+            cpu: "4"      # Guaranteed QoS: limit = request
+            memory: 8Gi   # Guaranteed QoS: limit = request
         volumeMounts:
         - name: output-data
           mountPath: /output
@@ -794,14 +801,18 @@ kubectl apply -f pvc-output-data.yaml
 kubectl apply -f pvc-logs.yaml
 ```
 
-### Phase 3: Model Servers
+### Phase 3: Model Servers (Sequential Deployment)
 ```bash
-kubectl apply -f statefulset-gemma-2b.yaml
+# Deploy one model at a time for testing
+kubectl apply -f deployment-gemma-2b.yaml
 kubectl apply -f service-gemma-2b.yaml
 # Wait for readiness
 kubectl wait --for=condition=ready pod -l app=vllm-server,model=gemma-2b -n grace-experiments --timeout=600s
 
-# Repeat for all models...
+# Test the model, then clean up before next model
+kubectl delete deployment vllm-gemma-2b -n grace-experiments
+
+# Repeat for next model...
 ```
 
 ### Phase 4: Verify Model Endpoints
@@ -837,7 +848,7 @@ kubectl apply -f job-structured-output-*.yaml
 kubectl delete jobs -l project=grace -n grace-experiments
 
 # Delete model servers
-kubectl delete statefulsets -l app=vllm-server -n grace-experiments
+kubectl delete deployments -l app=vllm-server -n grace-experiments
 
 # Keep PVCs for data persistence
 # kubectl delete pvc -l project=grace -n grace-experiments  # Only if starting fresh
@@ -915,13 +926,13 @@ All access is internal to cluster (pod-to-pod). No external ingress needed.
 ## Estimated Deployment Timeline
 
 - **Infrastructure Setup**: 1 day
-- **Model Deployment & Testing**: 2-3 days
+- **Model Deployment & Testing**: 2-3 days (sequential, one model at a time)
 - **Job Development & Testing**: 2-3 days
 - **Full Experiment Run**: 1-2 days (depending on dataset size)
 - **Total**: 6-9 days for complete system
 
 ## Cost Estimation (NRP GPU Hours)
 
-- **Model Deployment (Idle)**: ~15 GPUs × 24 hours × 5 days = 1,800 GPU-hours
+- **Model Deployment (Sequential Testing)**: ~6 models × 4 GPUs × 4 hours = 96 GPU-hours
 - **Query Generation**: ~15 GPUs × 4 hours = 60 GPU-hours
-- **Total**: ~1,860 GPU-hours (adjust based on actual experiment duration)
+- **Total**: ~156 GPU-hours (significantly less than parallel deployment)

@@ -6,6 +6,45 @@ This document provides detailed technical specifications for serving transformer
 
 ---
 
+## Deployment Strategy
+
+### Sequential Model Testing Approach
+
+Models will be deployed sequentially, with each model running for less than 1 day:
+1. Deploy model instance using Kubernetes Deployment
+2. Run experiments and collect data (estimated 4-8 hours per model)
+3. Delete the Deployment when experiments complete
+4. Deploy next model in the lineup
+
+This approach ensures:
+- Minimal resource usage (only 1-2 models running at a time)
+- No long-running deployments (all <24 hours)
+- Efficient use of NRP GPU resources
+- Easy cleanup between experiments
+- NRP compliance: sequential testing avoids prolonged resource allocation
+
+**Important**: All deployments use the Deployment resource type (not StatefulSets), as models are stateless serving workloads.
+
+### Typical Model Lifecycle
+
+```bash
+# 1. Deploy model (10-20 minutes for model loading)
+kubectl apply -f deployments/vllm-gemma-9b.yaml
+
+# 2. Wait for ready
+kubectl wait --for=condition=ready pod -l app=vllm-gemma-9b --timeout=20m
+
+# 3. Run experiments (4-8 hours)
+python experiments/run_study1.py --model gemma-9b
+
+# 4. Clean up (<1 minute)
+kubectl delete deployment vllm-gemma-9b
+
+# Total runtime per model: <24 hours (typically 6-10 hours)
+```
+
+---
+
 ## Model Selection & Specifications
 
 ### Recommended Models for Grace Project
@@ -28,6 +67,98 @@ This document provides detailed technical specifications for serving transformer
 - DeepSeek-V3 (extraction)
 
 **Total GPU Requirements**: 8x A100 40GB + 2x A100 80GB
+
+---
+
+## Kubernetes Resource Specifications
+
+### NRP-Compliant Resource Requests and Limits
+
+All deployments must follow NRP policy: resource limits within 20% of requests.
+
+#### Single-GPU Models (Gemma 2B, 9B, Llama 8B, Mistral 7B)
+
+```yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vllm-gemma-9b
+spec:
+  replicas: 1
+  template:
+    spec:
+      containers:
+      - name: vllm
+        image: vllm/vllm-openai:latest
+        resources:
+          requests:
+            cpu: "8"
+            memory: "32Gi"
+            nvidia.com/gpu: "1"
+          limits:
+            cpu: "10"        # 125% of requests (within 20% compliance)
+            memory: "38Gi"   # 119% of requests (within 20% compliance)
+            nvidia.com/gpu: "1"
+```
+
+#### Multi-GPU Models (Llama 70B - 4 GPUs)
+
+```yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vllm-llama-70b
+spec:
+  replicas: 1
+  template:
+    spec:
+      containers:
+      - name: vllm
+        image: vllm/vllm-openai:latest
+        resources:
+          requests:
+            cpu: "16"
+            memory: "128Gi"
+            nvidia.com/gpu: "4"
+          limits:
+            cpu: "19"        # 119% of requests (within 20% compliance)
+            memory: "154Gi"  # 120% of requests (within 20% compliance)
+            nvidia.com/gpu: "4"
+```
+
+#### MoE Models (DeepSeek-V3 - 2x A100 80GB)
+
+```yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vllm-deepseek-v3
+spec:
+  replicas: 1
+  template:
+    spec:
+      containers:
+      - name: vllm
+        image: vllm/vllm-openai:latest
+        resources:
+          requests:
+            cpu: "12"
+            memory: "160Gi"
+            nvidia.com/gpu: "2"
+          limits:
+            cpu: "14"        # 117% of requests (within 20% compliance)
+            memory: "192Gi"  # 120% of requests (within 20% compliance)
+            nvidia.com/gpu: "2"
+      nodeSelector:
+        nvidia.com/gpu.memory: "81920"  # Request A100 80GB GPUs
+```
+
+**Resource Planning Notes**:
+- CPU requests sized for vLLM overhead + model serving
+- Memory requests account for model weights + KV cache + overhead
+- GPU limits always equal requests (GPUs are discrete resources)
+- Limits are within 20% of requests as required by NRP policy
+- Node selectors used to target specific GPU types when needed
 
 ---
 

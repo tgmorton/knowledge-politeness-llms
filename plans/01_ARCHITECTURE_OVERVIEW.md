@@ -14,7 +14,8 @@ This document outlines the architecture for running distributed LLM experiments 
 
 ### 2. **Scalability & Resource Optimization**
 - One model per GPU-enabled pod for optimal performance
-- Parallel job execution for different studies/models
+- Sequential model deployment (one model at a time, <1 day each)
+- Parallel job execution for different studies within each model deployment
 - Resource quotas to prevent cluster saturation
 - Auto-scaling for query generation workloads
 
@@ -49,13 +50,20 @@ This document outlines the architecture for running distributed LLM experiments 
 
 **Deployment Pattern**:
 ```
-StatefulSet per model:
-  - Single replica (can scale if needed)
+Deployment per model:
+  - Single replica (stateless model server)
   - GPU node affinity
   - Model weights downloaded at init (or mounted from PVC)
   - Service exposing port 8000
   - Liveness/readiness probes
+  - Sequential deployment: one model active at a time for <1 day
+  - Clean up (kubectl delete deployment) before next model
 ```
+
+**Note on Workload Type**: Using Deployments (not StatefulSets) because:
+- Model servers are stateless (no persistent identity needed)
+- NRP auto-deletes Deployments after 2 weeks (acceptable for <1 day sequential runs)
+- Simplifies orchestration and cleanup
 
 ### Component 2: Query Generation Jobs
 
@@ -173,15 +181,19 @@ StatefulSet per model:
 3. Create all PVCs
 4. Deploy secrets for API keys (if using external APIs)
 
-**Phase 2: Model Deployment**
-1. Deploy model weight download init jobs (if not pre-populated)
-2. Deploy StatefulSets for each model
-3. Wait for all models to be ready (health checks)
-4. Run smoke tests on each endpoint
+**Phase 2: Model Deployment (Sequential)**
+1. Deploy model weight download init job for first model (if not pre-populated)
+2. Deploy Deployment for first model
+3. Wait for model to be ready (health check)
+4. Run smoke test on endpoint
+5. Execute all experiments for this model (Phases 3-5)
+6. Clean up: `kubectl delete deployment <model-name>`
+7. Repeat steps 1-6 for next model
+8. Continue until all models completed
 
-**Phase 3: Experiment 1 Execution** (Raw Responses)
-1. Deploy Study 1 query jobs (one per model) - parallel
-2. Deploy Study 2 query jobs (one per model) - parallel
+**Phase 3: Experiment 1 Execution** (Raw Responses - Per Model)
+1. Deploy Study 1 query jobs - parallel across studies
+2. Deploy Study 2 query jobs - parallel across studies
 3. Monitor job completion
 4. Validate output CSVs exist and are complete
 
@@ -223,28 +235,37 @@ StatefulSet per model:
 
 ## Resource Requirements
 
-### Per Model Serving Pod
+### Per Model Serving Pod (Sequential Deployment)
 
-| Model | GPU | CPU | Memory | Disk |
-|-------|-----|-----|--------|------|
-| Gemma-2B | 1x A100 (40GB) | 8 cores | 32GB | 10GB |
-| Gemma-7B | 1x A100 (40GB) | 16 cores | 64GB | 30GB |
-| Gemma-27B | 2x A100 (40GB) | 32 cores | 128GB | 60GB |
-| Llama-8B | 1x A100 (40GB) | 16 cores | 64GB | 40GB |
-| Llama-70B | 4x A100 (40GB) | 64 cores | 256GB | 150GB |
-| DeepSeek-V2 | 2x A100 (80GB) | 32 cores | 128GB | 80GB |
+**Resource specifications must comply with NRP policy: limits within 20% of requests**
 
-### Per Query Job
-- CPU: 4 cores
-- Memory: 8GB
+| Model | GPU | CPU (request) | CPU (limit) | Memory (request) | Memory (limit) | Disk |
+|-------|-----|---------------|-------------|------------------|----------------|------|
+| Gemma-2B | 1x A100-80GB | 8 | 10 (125%) | 32GB | 38GB (119%) | 10GB |
+| Gemma-7B | 1x A100-80GB | 16 | 19 (119%) | 64GB | 77GB (120%) | 30GB |
+| Gemma-27B | 2x A100-80GB | 32 | 38 (119%) | 128GB | 154GB (120%) | 60GB |
+| Llama-8B | 1x A100-80GB | 16 | 19 (119%) | 64GB | 77GB (120%) | 40GB |
+| Llama-70B | 2x A100-80GB | 32 | 38 (119%) | 192GB | 230GB (120%) | 150GB |
+| DeepSeek-V2 | 2x A100-80GB | 32 | 38 (119%) | 128GB | 154GB (120%) | 80GB |
+
+**Note**: Updated to A100-80GB (instead of 40GB) to reduce GPU requirements. Llama-70B now requires only 2 GPUs instead of 4.
+
+### Per Query Job (NRP Compliant)
+- CPU request: 4 cores, limit: 5 cores (125%)
+- Memory request: 8GB, limit: 10GB (125%)
 - No GPU required
 - Parallelism: 10-50 concurrent requests
 
-### Total Cluster Requirements
-- **GPUs**: 10-15 A100 GPUs (depending on model selection)
-- **CPU**: 200+ cores
-- **Memory**: 800GB+ RAM
+### Total Cluster Requirements (Sequential Deployment)
+- **Peak GPUs**: 2-4 A100-80GB GPUs (one model at a time)
+- **Peak CPU**: 32-64 cores (one model + query jobs)
+- **Peak Memory**: 192-256GB RAM
 - **Storage**: 600GB persistent storage
+- **Duration**: <1 day per model, ~1 week total for all models
+
+**Comparison to Parallel Deployment**:
+- Parallel would require: 10-15 GPUs simultaneously for 2+ weeks
+- Sequential requires: 2-4 GPUs for <1 day each (no deployment duration exception needed)
 
 ## Security & Compliance
 
