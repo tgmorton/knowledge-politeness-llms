@@ -1,0 +1,36 @@
+\section{Procedures}
+
+\subsection{Study 1}
+
+\subsubsection{Scenario Preparation}
+
+We prepared a set of scenarios in which a speaker had partial knowledge about a set of three items. Each scenario included: (1) a story setup describing a context in which items typically had a particular property (e.g., ``Students in the introductory bio class almost always have passing grades on the exam. Mark's 3 intro bio students took an exam yesterday.''), (2) a prior question asking about the expected number of items with the property, (3) a speaker's statement indicating both how many items they had examined (access level: 1, 2, or 3 items) and what they reported observing (observe condition: ``One'', ``Two'', or ``Three'' items had the property), (4) a follow-up question asking for updated probability judgments, and (5) a knowledge assessment question asking whether the speaker knew exactly how many items had the property. Scenarios varied across multiple story contexts (e.g., exams, letters, tickets, fruits, phones, seeds) and systematically varied access level (1, 2, or 3) and observe condition (``One'', ``Two'', or ``Three'').
+
+\subsubsection{LLM Querying}
+
+We queried OpenAI's GPT-4 model (via the \texttt{gpt-4} API endpoint) to obtain responses for each scenario. For each trial, we constructed a prompt that included: (1) the story setup context, (2) the prior question, (3) the speaker's statement, and (4) the follow-up question. The prompt concluded with the instruction: ``Based on this context, please evaluate what is known and respond with your assessment.''
+
+The model was configured with a system message identifying it as ``a helpful assistant analyzing pragmatic language use.'' We used a temperature parameter of 0.7 to allow for some variability in responses while maintaining consistency, and set a maximum token limit of 150 for responses. API calls were processed programmatically in batches of 10 trials with a 1-second delay between individual calls to manage rate limits and ensure reliable data collection. Responses were automatically saved to the output CSV file after each batch to prevent data loss.
+
+\subsubsection{Response Coding}
+
+LLM responses were manually coded to extract structured data. For each response, coders identified: (1) probability distributions across four possible states (0, 1, 2, or 3 items having the property), represented as variables X0, X1, X2, and X3, which sum to 100 percentage points, (2) knowledge assessments indicating whether the LLM judged that the speaker knew exactly how many items had the property (coded as Y for yes, N for no), and (3) text responses to the prior question, speaker statement question, and knowledge question.
+
+\subsubsection{Data Quality and Exclusions}
+
+Prior to analysis, we excluded trials based on three coding quality criteria: (1) incomplete responses where probability distributions could not be reliably extracted (marked in \texttt{drop\_incomplete}), (2) responses indicating incorrect understanding of the prior probability context (marked in \texttt{drop\_wrongPrior}), and (3) responses indicating incorrect knowledge assessments that contradicted the speaker's access level (marked in \texttt{drop\_wrongKnowledge}). Additionally, we removed any trials with missing values in the probability distribution variables (X0, X1, X2, X3).
+
+\subsection{Study 2}
+
+\subsubsection{Scenario Preparation}
+
+We prepared scenarios in which a speaker was asked to provide feedback to an addressee. Each scenario included: (1) a precontext describing a situation (e.g., ``Imagine that Wendy has just finished giving a presentation''), (2) a scenario description in which the addressee asked for feedback (e.g., ``Imagine that Wendy approached Emma, who had just seen Wendy's presentation, and asked, `How was my presentation?'''), (3) a communicative goal condition (making the addressee feel good [social], giving accurate and informative feedback [informational], or both), and (4) a true quality state (0, 1, 2, or 3 hearts, where more hearts indicated higher quality). Scenarios varied across multiple domains (e.g., presentations, cookies, poems, cakes, songs, films, solos, dances, paintings, apps, reviews, recitals).
+
+\subsubsection{LLM Production Task}
+
+We queried the LLM to produce utterances that a speaker would say in each scenario given the specified communicative goal. The LLM selected from eight possible utterance options, which varied along two dimensions: (1) assessment level (terrible, bad, good, or amazing) and (2) positivity frame (``It was $\sim$'' or ``It wasn't $\sim$''). The study systematically varied State (0, 1, 2, or 3 hearts), Goal (informational, social, or both), and positivity frame (was vs. wasn't) across trials.
+
+\subsubsection{Response Coding and Analysis}
+
+LLM utterance choices were coded and aggregated to calculate the proportion of each utterance type selected across all combinations of State, Goal, and positivity frame. For each combination of these factors, we computed the count and proportion of each utterance choice, as well as standard deviations based on the Bernoulli distribution for binary outcomes.
+

@@ -1,0 +1,512 @@
+d_ttest <- d %>%
+select(Participant, DirectionofRotation, Point.8, One1, One1.2)
+#Create tidy data set
+d.tidy_anova <- d_anova %>%
+gather(condition,rangeofmotion,starts_with("condition")) %>% #the value various condition columns contains are the range of motion
+#Need to convert following columns to proper type
+mutate(Participant = as.factor(Participant),
+condition = as.factor(condition),
+DirectionofRotation = as.factor(DirectionofRotation))
+d.tidy_ttest <- d_ttest %>%
+rename(Condition1_Gain0.8 = Point.8,
+Condition2_Gain1.0 = One1,
+Condition3_Gain1.2 = One1.2
+) %>%
+mutate(Participant = as.factor(Participant),
+DirectionofRotation = as.factor(DirectionofRotation))
+ttest0.8v1 <- t.test(d.tidy_ttest$Condition1_Gain0.8, d$Condition2_Gain1, paired = TRUE)
+ttest0.8v1.2 <- t.test(d.tidy_ttest$Condition1_Gain0.8, d$Condition3_Gain1.2, paired = TRUE)
+ttest1.2v1 <- t.test(d.tidy_ttest$Condition3_Gain1.2, d$Condition2_Gain1, paired = TRUE)
+ttest0.8v1
+d.tidy_ttest
+d.tidy_ttest
+d.tidy_ttest
+d.tidy_ttest <- d_ttest %>%
+rename(Condition1_Gain0.8 = Point.8,
+Condition2_Gain1.0 = One1,
+Condition3_Gain1.2 = One1.2
+) %>%
+mutate(Participant = as.factor(Participant),
+DirectionofRotation = as.factor(DirectionofRotation),
+wid = paste(Participant, DirectionofRotation, sep = "_"))
+ttest0.8v1 <- t.test(d.tidy_ttest$Condition1_Gain0.8, d$Condition2_Gain1, paired = TRUE)
+ttest0.8v1
+ttest0.8v1.2
+ttest1.2v1
+ttest0.8v1.2
+head(d.tidy_anova)
+head(d.tidy_anova)
+d_anova
+ttest0.8v1
+ttest0.8v1 <- t.test(d.tidy_ttest$Condition1_Gain0.8, d.tidy_ttest$Condition2_Gain1, paired = TRUE)
+d.tidy_ttest <- d_ttest %>%
+rename(Condition1_Gain0.8 = Point.8,
+Condition2_Gain1.0 = One1,
+Condition3_Gain1.2 = One1.2
+) %>%
+mutate(Participant = as.factor(Participant),
+DirectionofRotation = as.factor(DirectionofRotation))
+ttest0.8v1 <- t.test(d.tidy_ttest$Condition1_Gain0.8, d.tidy_ttest$Condition2_Gain1, paired = TRUE)
+head(d.tidy_ttest)
+ttest0.8v1 <- t.test(d.tidy_ttest$Condition1_Gain0.8, d.tidy_ttest$Condition2_Gain1, y = Participant, paired = TRUE)
+?t.test
+ttest0.8v1 <- t.test(d.tidy_ttest$Condition1_Gain0.8, d.tidy_ttest$Condition2_Gain1, y = d.tidy_ttest$Participant, paired = TRUE)
+head(d.tidy_ttest)
+ttest0.8v1 <- t.test(d.tidy_ttest$Condition1_Gain0.8, d.tidy_ttest$Condition2_Gain1, paired = TRUE)
+ttest0.8v1 <- t.test(d.tidy_ttest$Condition1_Gain0.8, d.tidy_ttest$Condition2_Gain1.0, paired = TRUE)
+ttest0.8v1.2 <- t.test(d.tidy_ttest$Condition1_Gain0.8, d.tidy_ttest$Condition3_Gain1.2, paired = TRUE)
+ttest1.2v1 <- t.test(d.tidy_ttest$Condition3_Gain1.2, d.tidy_ttest$Condition2_Gain1.0, paired = TRUE)
+ttest0.8v1
+# copilot: bonf
+ttestbonf <- with(d.tidy, pairwise.t.test(rangeofmotion, condition), paired=TRUE, p.adj = "bonf")
+# copilot: bonf
+ttestbonf <- with(d.tidy_ttest, pairwise.t.test(rangeofmotion, condition), paired=TRUE, p.adj = "bonf")
+reportObject <- reproCheck(reportedValue = "<.01", obtainedValue = ttest0.8v1$p.value, valueType = 'p', eyeballCheck = TRUE)
+reportObject <- reproCheck(reportedValue = "<.01", obtainedValue = ttest0.8v1.2$p.value, valueType = 'p', eyeballCheck = TRUE)
+reportObject <- reproCheck(reportedValue = "<.01", obtainedValue = ttest1.2v1$p.value, valueType = 'p', eyeballCheck = TRUE)
+?independentSamplesTTest
+?lsr
+d.tidy_cohensd <- d_ttest %>%
+rename(Condition1_Gain0.8 = Point.8,
+Condition2_Gain1.0 = One1,
+Condition3_Gain1.2 = One1.2
+) %>%
+gather(key = condition, value = rangeofmotion, Condition1_Gain0.8:Condition3_Gain1.2)
+d.tidy_cohensd <- d_ttest %>%
+rename(Condition1_Gain0.8 = Point.8,
+Condition2_Gain1.0 = One1,
+Condition3_Gain1.2 = One1.2
+) %>%
+gather(key = condition, value = rangeofmotion, Condition1_Gain0.8:Condition3_Gain1.2) %>%
+mutate(Participant = as.factor(Participant),
+DirectionofRotation = as.factor(DirectionofRotation))
+head(d.tidy_cohensd)
+# condition 1 vs. 2
+ttest_cohen1vs2 <- pairedSamplesTTest(rangeofmotion ~ condition, d.tidy_cohensd %>% filter(condition != "Condition3_Gain1.2"), id="Participant")
+# condition 1 vs. 2
+ttest_cohen1vs2 <- pairedSamplesTTest(rangeofmotion ~ condition, d.tidy_cohensd %>% filter(condition != "Condition3_Gain1.2"), id="Participant")
+# condition 1 vs. 2
+ttest_cohen1vs2 <- pairedSamplesTTest(rangeofmotion ~ condition, d.tidy_cohensd %>% filter(condition != "Condition3_Gain1.2"), id=Participant)
+# condition 1 vs. 2
+ttest_cohen1vs2 <- pairedSamplesTTest(rangeofmotion ~ condition, data=d.tidy_cohensd %>% filter(condition != "Condition3_Gain1.2"), id=Participant)
+# condition 1 vs. 2
+ttest_cohen1vs2 <- pairedSamplesTTest(rangeofmotion ~ condition + (Participant), data=d.tidy_cohensd %>% filter(condition != "Condition3_Gain1.2"))
+d.tidy_cohensd
+d.tidy_cohensd <- d_ttest %>%
+rename(Condition1_Gain0.8 = Point.8,
+Condition2_Gain1.0 = One1,
+Condition3_Gain1.2 = One1.2
+) %>%
+gather(key = condition, value = rangeofmotion, Condition1_Gain0.8:Condition3_Gain1.2) %>%
+mutate(Participant = as.factor(Participant),
+DirectionofRotation = as.factor(DirectionofRotation),
+rangeofmotion = as.character(as.numeric(rangeofmotion)))
+# condition 1 vs. 2
+ttest_cohen1vs2 <- pairedSamplesTTest(rangeofmotion ~ condition + (Participant), data=d.tidy_cohensd %>% filter(condition != "Condition3_Gain1.2"))
+# condition 1 vs. 2
+ttest_cohen1vs2 <- pairedSamplesTTest(formula = rangeofmotion ~ condition + (Participant), data=d.tidy_cohensd %>% filter(condition != "Condition3_Gain1.2"))
+# condition 1 vs. 2
+ttest_cohen1vs2 <- pairedSamplesTTest(formula = rangeofmotion ~ condition, data=d.tidy_cohensd %>% filter(condition != "Condition3_Gain1.2"))
+head(d.tidy_cohensd)
+head(d.tidy_cohensd)
+d.tidy_cohensd <- d_ttest %>%
+rename(Condition1_Gain0.8 = Point.8,
+Condition2_Gain1.0 = One1,
+Condition3_Gain1.2 = One1.2
+) %>%
+gather(key = condition, value = rangeofmotion, Condition1_Gain0.8:Condition3_Gain1.2) %>%
+mutate(Participant = as.factor(Participant),
+DirectionofRotation = as.factor(DirectionofRotation),
+rangeofmotion = as.numeric(as.character(rangeofmotion)))
+# condition 1 vs. 2
+ttest_cohen1vs2 <- pairedSamplesTTest(formula = rangeofmotion ~ condition + (Participant), data=d.tidy_cohensd %>% filter(condition != "Condition3_Gain1.2"))
+d.tidy_cohensd %>% filter(condition != "Condition3_Gain1.2")
+d.tidy_cohensd
+d.tidy_cohensd %>% filter(condition != "Condition3_Gain1.2")
+summary(d.tidy_cohensd)
+d.tidy_cohensd <- d_ttest %>%
+rename(Condition1_Gain0.8 = Point.8,
+Condition2_Gain1.0 = One1,
+Condition3_Gain1.2 = One1.2
+) %>%
+gather(key = condition, value = rangeofmotion, Condition1_Gain0.8:Condition3_Gain1.2) %>%
+mutate(Participant = as.factor(Participant),
+condition = as.factor(condition),
+DirectionofRotation = as.factor(DirectionofRotation),
+rangeofmotion = as.numeric(as.character(rangeofmotion)))
+# condition 1 vs. 2
+ttest_cohen1vs2 <- pairedSamplesTTest(formula = rangeofmotion ~ condition + (Participant), data=d.tidy_cohensd %>% filter(condition != "Condition3_Gain1.2"))
+# condition 1 vs. 2
+ttest_cohen1vs2 <- independentSamplesTTest(formula = rangeofmotion ~ condition, data=d.tidy_cohensd %>% filter(condition != "Condition3_Gain1.2"))
+summary(d.tidy_cohensd)
+head(d.tidy_ttest)
+ttest_cohen1vs2 <- pairedSamplesTTest(formula = ~Condition1_Gain0.8 + Condition2_Gain1.0, data=d.tidy_ttest %>% filter(condition != "Condition3_Gain1.2"))
+ttest_cohen1vs2 <- pairedSamplesTTest(formula = ~Condition1_Gain0.8 + Condition2_Gain1.0, data=d.tidy_ttest)
+summary(d.tidy_ttest)
+ttest_cohen1vs2 <- pairedSamplesTTest(data=d.tidy_ttest, formula = ~Condition1_Gain0.8 + Condition2_Gain1.0)
+ttest_cohen1vs2 <- pairedSamplesTTest(data=d.tidy_ttest, formula = ~Condition2_Gain1.0 + Condition1_Gain0.8)
+is.numeric(d.tidy_ttest$Condition1_Gain0.8)
+pairedSamplesTTest(data=d.tidy_ttest, formula = ~Condition2_Gain1.0 + Condition1_Gain0.8)
+head(d)
+ttest_cohen1vs2 <- pairedSamplesTTest(data=d, formula = ~Point.8 + One1)
+ttest_cohen1vs2 <- pairedSamplesTTest(data=d, formula = ~d$Point.8 + d$One1)
+ttest_cohen1vs2 <- pairedSamplesTTest(formula = ~d$Point.8 + d$One1)
+ttest_cohen1vs2 <- pairedSamplesTTest(data=d, formula = ~d$Point.8 + One1)
+ttest_cohen1vs2 <- pairedSamplesTTest(data=d, formula = ~Point.8 + One1)
+articleID <- "3-4-2015_PS" # insert the article ID code here e.g., "10-3-2015_PS"
+reportType <- 'pilot'
+pilotNames <- "Erik Santoro, Tysen Dauer, Jaclyn Schwartz" # insert the pilot's name here e.g., "Tom Hardwicke". If there are multiple pilots enter both names in a character string e.g., "Tom Hardwicke, Bob Dylan"
+copilotNames <- "Erica Yoon" # insert the co-pilot's name here e.g., "Michael Frank". If there are multiple co-pilots enter both names in a character string e.g., "Tom Hardwicke, Bob Dylan"
+pilotTTC <- 720 # insert the pilot's estimated time to complete (in minutes, fine to approximate) e.g., 120
+copilotTTC <- 120 # insert the co- pilot's estimated time to complete (in minutes, fine to approximate) e.g., 120
+pilotStartDate <- as.Date("10/31/17", format = "%m/%d/%y") # insert the pilot's start date in US format e.g., as.Date("01/25/18", format = "%m/%d/%y")
+copilotStartDate <- as.Date("06/13/18", format = "%m/%d/%y") # insert the co-pilot's start date in US format e.g., as.Date("01/25/18", format = "%m/%d/%y")
+completionDate <- as.Date("06/13/18", format = "%m/%d/%y") # copilot insert the date of final report completion (after any necessary rounds of author assistance) in US format e.g., as.Date("01/25/18", format = "%m/%d/%y")
+knitr::opts_chunk$set(echo=TRUE, warning=FALSE, message=FALSE)
+library(tidyverse) # for data munging
+library(knitr) # for kable table formating
+library(haven) # import and export 'SPSS', 'Stata' and 'SAS' Files
+library(readxl) # import excel files
+library(CARPSreports) # custom report functions
+library(ez) # for repeated ANOVAs
+library(lsr) #for cohen's d
+library(MBESS) # for effect size from ezANOVA
+# Prepare report object. This will be updated automatically by the reproCheck function each time values are compared.
+reportObject <- data.frame(dummyRow = TRUE, reportedValue = NA, obtainedValue = NA, valueType = NA, percentageError = NA, comparisonOutcome = NA, eyeballCheck = NA)
+d <- read_sav("data/BogusVisualFeedbackData.sav")
+d_anova <- d %>%
+select(Participant, DirectionofRotation, Condition1_Gain0.8, Condition2_Gain1, Condition3_Gain1.2)
+d_ttest <- d %>%
+select(Participant, DirectionofRotation, Point.8, One1, One1.2)
+#Create tidy data set
+d.tidy_anova <- d_anova %>%
+gather(condition,rangeofmotion,starts_with("condition")) %>% #the value various condition columns contains are the range of motion
+#Need to convert following columns to proper type
+mutate(Participant = as.factor(Participant),
+condition = as.factor(condition),
+DirectionofRotation = as.factor(DirectionofRotation))
+d.tidy_ttest <- d_ttest %>%
+rename(Condition1_Gain0.8 = Point.8,
+Condition2_Gain1.0 = One1,
+Condition3_Gain1.2 = One1.2
+) %>%
+mutate(Participant = as.factor(Participant),
+DirectionofRotation = as.factor(DirectionofRotation))
+# wid = paste(Participant, DirectionofRotation, sep = "_"))
+d.tidy_cohensd <- d_ttest %>%
+rename(Condition1_Gain0.8 = Point.8,
+Condition2_Gain1.0 = One1,
+Condition3_Gain1.2 = One1.2
+) %>%
+gather(key = condition, value = rangeofmotion, Condition1_Gain0.8:Condition3_Gain1.2) %>%
+mutate(Participant = as.factor(Participant),
+condition = as.factor(condition),
+DirectionofRotation = as.factor(DirectionofRotation),
+rangeofmotion = as.numeric(as.character(rangeofmotion)))
+# wid = paste(Participant, DirectionofRotation, sep = "_"))
+d.comparison <- d_anova %>%
+group_by(Participant) %>%
+summarise(meancondition1_gain0.8 = mean(Condition1_Gain0.8),
+meancondition2_gain1 = mean(Condition2_Gain1),
+meancondition3_gain1.2 = mean(Condition3_Gain1.2)
+)
+mean0.8 <- mean(d_anova$Condition1_Gain0.8)
+mean1 <- mean(d_anova$Condition2_Gain1)
+mean1.2 <- mean(d_anova$Condition3_Gain1.2)
+#Repeated Measures ANOVA
+#Condition is within variable, and DirectionofRotation is the between variable;
+#Note: DirectionofRotation SHOULD be a within variable...
+modANOVA <- ezANOVA(data = d.tidy_anova %>%
+mutate(wid = paste(Participant, DirectionofRotation, sep = "_")),
+dv = rangeofmotion,
+# wid = Participant,
+wid = wid,
+within = .(condition),
+# within = .(condition, DirectionofRotation),
+detailed = TRUE,
+return_aov = TRUE) #returns aov object, which is supposedly useful for calculating partial eta squared, but I could not figure out
+# calculating partial eta squared
+# source: https://groups.google.com/forum/#!topic/ez4r/4CHBP-jlZGY
+modANOVA$ANOVA$partialetasquared <- modANOVA$ANOVA$SSn/(modANOVA$ANOVA$SSn+modANOVA$ANOVA$SSd)
+loweretasquared <- c()
+upperetasquared <- c()
+for (cR in 1:nrow(modANOVA$ANOVA)) {
+Lims <- conf.limits.ncf(F.value = modANOVA$ANOVA$F[cR], conf.level = 0.95, df.1 <- modANOVA$ANOVA$DFn[cR], df.2 <- modANOVA$ANOVA$DFd[cR])
+Lower.lim <- Lims$Lower.Limit/(Lims$Lower.Limit + df.1 + df.2 + 1)
+Upper.lim <- Lims$Upper.Limit/(Lims$Upper.Limit + df.1 + df.2 + 1)
+if (is.na(Lower.lim)) {
+Lower.lim <- 0
+}
+if (is.na(Upper.lim)) {
+Upper.lim <- 1
+}
+loweretasquared <- c(loweretasquared,Lower.lim)
+upperetasquared <- c(upperetasquared,Upper.lim)
+}
+modANOVA$ANOVA$partialetasquared.lower <- loweretasquared
+modANOVA$ANOVA$partialetasquared.upper <- upperetasquared
+reportObject <- reproCheck(reportedValue = "18.9", obtainedValue = modANOVA$ANOVA$F[2], valueType = 'F')
+reportObject <- reproCheck(reportedValue = "94", obtainedValue = modANOVA$ANOVA$DFd[2], valueType = 'df')
+reportObject <- reproCheck(reportedValue = "<.001", obtainedValue = modANOVA$ANOVA$p[2], valueType = 'p', eyeballCheck = TRUE)
+ttest0.8v1 <- t.test(d.tidy_ttest$Condition1_Gain0.8, d.tidy_ttest$Condition2_Gain1.0, paired = TRUE)
+ttest0.8v1.2 <- t.test(d.tidy_ttest$Condition1_Gain0.8, d.tidy_ttest$Condition3_Gain1.2, paired = TRUE)
+ttest1.2v1 <- t.test(d.tidy_ttest$Condition3_Gain1.2, d.tidy_ttest$Condition2_Gain1.0, paired = TRUE)
+reportObject <- reproCheck(reportedValue = "<.01", obtainedValue = ttest0.8v1$p.value, valueType = 'p', eyeballCheck = TRUE)
+reportObject <- reproCheck(reportedValue = "<.01", obtainedValue = ttest0.8v1.2$p.value, valueType = 'p', eyeballCheck = TRUE)
+reportObject <- reproCheck(reportedValue = "<.01", obtainedValue = ttest1.2v1$p.value, valueType = 'p', eyeballCheck = TRUE)
+ttest_cohen1vs2 <- pairedSamplesTTest(data=d, formula = ~Point.8 + One1)
+# condition 1 vs. 2
+ttest_cohen1vs2 <- pairedSamplesTTest(formula = rangeofmotion ~ condition + (Participant), data=d.tidy_cohensd %>% filter(condition != "Condition3_Gain1.2"))
+ttest_cohen1vs2 <- pairedSamplesTTest(data=d, formula = ~Point.8 + One1)
+?colClasses
+??colClasses
+str(d)
+str(d)
+str(d.tidy_cohensd)
+d.tidy_cohensd <- as_tibble(d_ttest) %>%
+rename(Condition1_Gain0.8 = Point.8,
+Condition2_Gain1.0 = One1,
+Condition3_Gain1.2 = One1.2
+) %>%
+gather(key = condition, value = rangeofmotion, Condition1_Gain0.8:Condition3_Gain1.2) %>%
+mutate(Participant = as.factor(Participant),
+condition = as.factor(condition),
+DirectionofRotation = as.factor(DirectionofRotation),
+rangeofmotion = as.numeric(as.character(rangeofmotion)))
+# condition 1 vs. 2
+ttest_cohen1vs2 <- pairedSamplesTTest(formula = rangeofmotion ~ condition + (Participant), data=d.tidy_cohensd %>% filter(condition != "Condition3_Gain1.2"))
+str(d.tidy_cohensd)
+# condition 1 vs. 2
+ttest_cohen1vs2 <- pairedSamplesTTest(data=d.tidy_cohensd %>% filter(condition != "Condition3_Gain1.2"), formula = rangeofmotion ~ condition + (Participant))
+View(d.tidy_cohensd)
+# condition 1 vs. 2
+ttest_cohen1vs2 <- independentSamplesTTest(data=d.tidy_cohensd %>% filter(condition != "Condition3_Gain1.2"), formula = rangeofmotion ~ condition + (Participant))
+# condition 1 vs. 2
+ttest_cohen1vs2 <- independentSamplesTTest(formula = rangeofmotion ~ condition + (Participant), data=d.tidy_cohensd %>% filter(condition != "Condition3_Gain1.2"), )
+# condition 1 vs. 2
+ttest_cohen1vs2 <- independentSamplesTTest(formula = rangeofmotion ~ condition + (Participant), data=d.tidy_cohensd %>% filter(condition != "Condition3_Gain1.2"))
+# condition 1 vs. 2
+ttest_cohen1vs2 <- pairedSamplesTTest(formula = rangeofmotion ~ condition + (Participant), data=d.tidy_cohensd %>% filter(condition != "Condition3_Gain1.2"))
+ttest0.8v1 <- t.test(d.tidy_ttest$Condition1_Gain0.8, d.tidy_ttest$Condition2_Gain1.0, paired = TRUE)
+ttest0.8v1
+View(d.tidy_ttest)
+ttest0.8v1 <- pairedSamplesTTest(d.tidy_ttest$Condition1_Gain0.8, d.tidy_ttest$Condition2_Gain1.0, paired = TRUE)
+ttest0.8v1 <- pairedSamplesTTest(d.tidy_ttest$Condition1_Gain0.8, d.tidy_ttest$Condition2_Gain1.0=)
+ttest0.8v1 <- pairedSamplesTTest(d.tidy_ttest$Condition1_Gain0.8, d.tidy_ttest$Condition2_Gain1.0)
+ttest0.8v1 <- pairedSamplesTTest(formula=~d.tidy_ttest$Condition1_Gain0.8 + d.tidy_ttest$Condition2_Gain1.0)
+ttest0.8v1 <- pairedSamplesTTest(formula=~Condition1_Gain0.8 + Condition2_Gain1.0, data=d.tidy_ttest)
+?pairedSamplesTTest
+head(d.tidy_anova)
+# condition 1 vs. 2
+ttest_cohen1vs2 <- pairedSamplesTTest(formula = rangeofmotion ~ condition + (Participant), data=d.tidy_anova %>% filter(condition != "Condition3_Gain1.2"))
+ttest0.8v1 <- with(d.tidy_ttest, pairedSamplesTTest(formula=~Condition1_Gain0.8 + Condition2_Gain1.0))
+with(d.tidy_ttest, cohen.d(Condition1_Gain0.8, Condition2_Gain1.0))
+library(effsize)
+with(d.tidy_ttest, cohen.d(Condition1_Gain0.8, Condition2_Gain1.0))
+with(d.tidy_ttest, cohen.d(Condition3_Gain1.2, Condition2_Gain1.0))
+with(d.tidy_ttest, cohen.d(Condition2_Gain1.0, Condition3_Gain1.2))
+with(d.tidy_ttest, cohen.d(Condition1_Gain0.8, Condition2_Gain1.0))
+with(d.tidy_ttest, cohen.d(Condition2_Gain1.0, Condition3_Gain1.2))
+with(d.tidy_anova, cohen.d(Condition1_Gain0.8, Condition2_Gain1.0))
+with(d_anova, cohen.d(Condition1_Gain0.8, Condition2_Gain1.0))
+head(d_anova)
+with(d_anova, cohen.d(Condition1_Gain0.8, Condition2_Gain1.0))
+with(d_anova, cohen.d(Condition1_Gain0.8, Condition2_Gain1))
+with(d_anova, cohen.d(Condition2_Gain1, Condition3_Gain1.2))
+with(d_anova, independentSamplesTTest(~Condition1_Gain0.8 + Condition2_Gain1))
+with(d_anova, independentSamplesTTest(formula = ~Condition1_Gain0.8 + Condition2_Gain1))
+with(d_anova, pairedSamplesTTest(formula = ~Condition1_Gain0.8 + Condition2_Gain1))
+pairedSamplesTTest(formula = ~Condition1_Gain0.8 + Condition2_Gain1, data=d_anova)
+var2 = as.numeric(as.character(Condition2_Gain1))
+d_test <- d_anova %>%
+var2 = as.numeric(as.character(Condition2_Gain1))
+d_test <- d_anova %>%
+d_test <- d_anova %>%
+mutate(var1 = as.numeric(as.character(Condition1_Gain0.8)),
+var2 = as.numeric(as.character(Condition2_Gain1)))
+d_test <- d_anova %>%
+mutate(var1 = as.numeric(as.character(Condition1_Gain0.8)),
+var2 = as.numeric(as.character(Condition2_Gain1)))
+pairedSamplesTTest(formula = ~var1 + var2, data=d_test)
+str(d_test)
+d_test <- d_anova %>%
+mutate(var1 = as.numeric(as.character(Condition1_Gain0.8)),
+var2 = as.numeric(as.character(Condition2_Gain1))) %>%
+select(var1, var2)
+pairedSamplesTTest(formula = ~var1 + var2, data=d_test)
+View(d_test)
+d_test <- d_anova %>%
+mutate(var1 = as.numeric(as.character(Condition1_Gain0.8)),
+var2 = as.numeric(as.character(Condition2_Gain1))) %>%
+select(var1, var2) %>%
+as_tibble(.)
+d_test
+pairedSamplesTTest(formula = ~var1 + var2, data=d_test)
+d_test
+is.numeric(d_test$var1)
+pairedSamplesTTest(formula = ~var1 + var2, data=d_test)
+cars
+head(cars)
+pairedSamplesTTest(formula = ~speed + dist, data=cars)
+str(cars)
+str(d_test)
+d_test <- d_anova %>%
+mutate(var1 = as.numeric(as.character(Condition1_Gain0.8)),
+var2 = as.numeric(as.character(Condition2_Gain1))) %>%
+select(var1, var2) %>%
+as.data.frame(.)
+pairedSamplesTTest(formula = ~var1 + var2, data=d_test)
+pairedSamplesTTest(formula = ~Condition1_Gain0.8 + Condition2_Gain1, data=as.data.frame(d.tidy_ttest))
+pairedSamplesTTest(formula = ~Condition1_Gain0.8 + Condition2_Gain1., data=as.data.frame(d.tidy_ttest))
+pairedSamplesTTest(formula = ~Condition1_Gain0.8 + Condition2_Gain1.0, data=as.data.frame(d.tidy_ttest))
+pairedSamplesTTest(formula = ~Condition2_Gain1.0 + Condition3_Gain1.2, data=as.data.frame(d.tidy_ttest))
+ttest0.8v1
+ttest_cohen1vs2
+ttest_cohen1vs2 <- pairedSamplesTTest(formula = ~Condition1_Gain0.8 + Condition2_Gain1.0, data=as.data.frame(d.tidy_ttest))
+ttest_cohen2vs3 <- pairedSamplesTTest(formula = ~Condition2_Gain1.0 + Condition3_Gain1.2, data=as.data.frame(d.tidy_ttest))
+ttest_cohen1vs2
+reportObject <- reproCheck(reportedValue = ".67", obtainedValue = ttest_cohen1vs2$effect.size, valueType = 'd')
+reportObject <- reproCheck(reportedValue = ".006", obtainedValue = ttest_cohen1vs2$p.value, valueType = 'p')
+reportObject <- reproCheck(reportedValue = ".8", obtainedValue = ttest_cohen2vs3$effect.size, valueType = 'd')
+reportObject <- reproCheck(reportedValue = ".001", obtainedValue = ttest_cohen2vs3$p.value, valueType = 'p')
+reportObject <- reproCheck(reportedValue = ".8", obtainedValue = ttest_cohen2vs3$effect.size, valueType = 'd')
+reportObject <- reproCheck(reportedValue = ".001", obtainedValue = ttest_cohen2vs3$p.value, valueType = 'p', eyeballCheck = TRUE)
+ttest_cohen1vs2 <- pairedSamplesTTest(formula = ~Condition1_Gain0.8 + Condition2_Gain1.0, data=as.data.frame(d.tidy_anova))
+ttest_cohen1vs2 <- pairedSamplesTTest(formula = ~Condition1_Gain0.8 + Condition2_Gain1, data=as.data.frame(d.tidy_anova))
+ttest_cohen1vs2 <- pairedSamplesTTest(formula = ~Condition1_Gain0.8 + Condition2_Gain1, data=as.data.frame(d_anova))
+ttest_cohen1vs2
+ttest_cohen1vs2 <- independentSamplesTTest(formula = ~Condition1_Gain0.8 + Condition2_Gain1.0, data=as.data.frame(d.tidy_ttest))
+ttest_cohen1vs2 <- independentSamplesTTest(formula = rangeofmotion ~ condition, data=as.data.frame(d.tidy_cohensd) %>% filter(condition != "Condition3_Gain1.2"))
+ttest_cohen1vs2
+ttest_cohen2vs3 <- independentSamplesTTest(formula = rangeofmotion ~ condition, data=as.data.frame(d.tidy_cohensd) %>% filter(condition != "Condition1_Gain0.8"))
+ttest_cohen2vs3
+#Vision understated true rotation
+confint_1vs2 <- (ttest_cohen1vs2$conf.int)*100
+confint_1vs2 <- (ttest_cohen1vs2$conf.int)*100
+mean_1vs2 <- (ttest_cohen1vs2$mean[1] - ttest_cohen1vs2$mean[2])*100
+#Vision overstated true rotation
+confint_2vs3 <- (ttest_cohen2vs3$conf.int)*100
+mean_2vs3 <- (ttest_cohen2vs3$mean[1] - ttest_cohen2vs3$mean[2])*100
+reportObject <- reproCheck(reportedValue = "6", obtainedValue = mean_1vs2, valueType = 'mean')
+reportObject <- reproCheck(reportedValue = "2", obtainedValue = confint_1vs2[1], valueType = 'ci')
+reportObject <- reproCheck(reportedValue = "11", obtainedValue = confint_1vs2[2], valueType = 'ci')
+reportObject <- reproCheck(reportedValue = "7", obtainedValue = mean_2vs3, valueType = 'mean')
+reportObject <- reproCheck(reportedValue = "3", obtainedValue = confint_2vs3[1], valueType = 'ci')
+reportObject <- reproCheck(reportedValue = "11", obtainedValue = confint_2vs3[2], valueType = 'ci')
+reportObject <- reproCheck(reportedValue = "13", obtainedValue = mean_1vs2+mean_2vs3, valueType = 'mean')
+# ANOVA
+modANOVA_corr <- ezANOVA(data = d.tidy_anova,
+dv = rangeofmotion,
+wid = Participant,
+within = .(condition, DirectionofRotation),
+detailed = TRUE,
+return_aov = TRUE) #returns aov object, which is supposedly useful for calculating partial eta squared, but I could not figure out
+print(modANOVA_corr)
+# t-test and cohen's d
+pairedSamplesTTest(~Condition1_Gain0.8 + Condition2_Gain1, data=d.tidy_ttest)
+# t-test and cohen's d
+pairedSamplesTTest(~Condition1_Gain0.8 + Condition2_Gain1.0, data=d.tidy_ttest)
+# t-test and cohen's d
+pairedSamplesTTest(~Condition1_Gain0.8 + Condition2_Gain1.0, data=as.data.frame(d.tidy_ttest))
+pairedSamplesTTest(~Condition3_Gain1.2 + Condition2_Gain1.0, data=as.data.frame(d.tidy_ttest))
+print(modANOVA_corr)
+articleID <- "3-4-2015_PS" # insert the article ID code here e.g., "10-3-2015_PS"
+reportType <- 'final'
+pilotNames <- "Erik Santoro, Tysen Dauer, Jaclyn Schwartz" # insert the pilot's name here e.g., "Tom Hardwicke". If there are multiple pilots enter both names in a character string e.g., "Tom Hardwicke, Bob Dylan"
+copilotNames <- "Erica Yoon" # insert the co-pilot's name here e.g., "Michael Frank". If there are multiple co-pilots enter both names in a character string e.g., "Tom Hardwicke, Bob Dylan"
+pilotTTC <- 720 # insert the pilot's estimated time to complete (in minutes, fine to approximate) e.g., 120
+copilotTTC <- 120 # insert the co- pilot's estimated time to complete (in minutes, fine to approximate) e.g., 120
+pilotStartDate <- as.Date("10/31/17", format = "%m/%d/%y") # insert the pilot's start date in US format e.g., as.Date("01/25/18", format = "%m/%d/%y")
+copilotStartDate <- as.Date("06/13/18", format = "%m/%d/%y") # insert the co-pilot's start date in US format e.g., as.Date("01/25/18", format = "%m/%d/%y")
+completionDate <- as.Date("", format = "%m/%d/%y") # copilot insert the date of final report completion (after any necessary rounds of author assistance) in US format e.g., as.Date("01/25/18", format = "%m/%d/%y")
+knitr::opts_chunk$set(echo=TRUE, warning=FALSE, message=FALSE)
+library(tidyverse) # for data munging
+library(knitr) # for kable table formating
+library(haven) # import and export 'SPSS', 'Stata' and 'SAS' Files
+library(readxl) # import excel files
+library(CARPSreports) # custom report functions
+library(ez) # for ezANOVA
+library(afex) # for repeated ANOVAs
+library(lsr) #for cohen's d
+# Prepare report object. This will be updated automatically by the reproCheck function each time values are compared.
+reportObject <- data.frame(dummyRow = TRUE, reportedValue = NA, obtainedValue = NA, valueType = NA, percentageError = NA, comparisonOutcome = NA, eyeballCheck = NA)
+d <- read_sav("data/BogusVisualFeedbackData.sav")
+d_anova <- d %>%
+select(Participant, DirectionofRotation, Condition1_Gain0.8, Condition2_Gain1, Condition3_Gain1.2)
+d_ttest <- d %>%
+select(Participant, DirectionofRotation, Point.8, One1, One1.2)
+#Create tidy data set
+d.tidy_anova <- d_anova %>%
+gather(condition,rangeofmotion,starts_with("condition")) %>% #the value various condition columns contains are the range of motion
+#Need to convert following columns to proper type
+mutate(Participant = as.factor(Participant),
+condition = as.factor(condition),
+DirectionofRotation = as.factor(DirectionofRotation))
+d.tidy_ttest <- d_ttest %>%
+rename(Condition1_Gain0.8 = Point.8,
+Condition2_Gain1.0 = One1,
+Condition3_Gain1.2 = One1.2
+) %>%
+mutate(Participant = as.factor(Participant),
+DirectionofRotation = as.factor(DirectionofRotation))
+d.comparison <- d_anova %>%
+group_by(Participant) %>%
+summarise(mean_c1 = mean(Condition1_Gain0.8),
+mean_c2 = mean(Condition2_Gain1),
+mean_c3 = mean(Condition3_Gain1.2)
+)
+mean0.8 <- mean(d.comparison$mean_c1)
+ci0.8 <- t.test(d.comparison$mean_c1)$conf.int
+mean0.8
+ci0.8
+mean0.8 <- mean(d_anova$Condition1_Gain0.8)
+mean1 <- mean(d_anova$Condition2_Gain1)
+mean1.2 <- mean(d_anova$Condition3_Gain1.2)
+mean1.2 <- mean(mean(d.comparison$mean_c3))
+ci1.2 <- t.test(d.comparison$mean_c3)$conf.int
+mean1.2
+ci1.2
+reportObject <- reproCheck(reportedValue = "figure", obtainedValue = mean0.8, valueType = 'mean', eyeballCheck = TRUE)
+reportObject <- reproCheck(reportedValue = "figure", obtainedValue = ci0.8[1], valueType = 'ci', eyeballCheck = TRUE)
+reportObject <- reproCheck(reportedValue = "figure", obtainedValue = ci0.8[2], valueType = 'ci', eyeballCheck = TRUE)
+reportObject <- reproCheck(reportedValue = "figure", obtainedValue = mean1, valueType = 'mean', eyeballCheck = TRUE)
+reportObject <- reproCheck(reportedValue = "figure", obtainedValue = mean1.2, valueType = 'mean', eyeballCheck = TRUE)
+reportObject <- reproCheck(reportedValue = "figure", obtainedValue = ci1.2[1], valueType = 'ci', eyeballCheck = TRUE)
+reportObject <- reproCheck(reportedValue = "figure", obtainedValue = ci1.2[2], valueType = 'ci', eyeballCheck = TRUE)
+#Repeated Measures ANOVA
+aov.out <- ezANOVA(data = d.tidy_anova %>%
+mutate(participant_direction = paste(Participant, DirectionofRotation, sep = "_")),
+dv = rangeofmotion,
+# wid = Participant,
+wid = participant_direction,
+within = .(condition),
+# within = .(condition, DirectionofRotation),
+detailed = TRUE,
+return_aov = TRUE)
+aov.out
+aov.out$anova_table$F
+aov.out$ANOVA
+aov.out$ANOVA$F
+aov.out$ANOVA$F[2]
+aov.out$ANOVA$DFd[2]
+reportObject <- reproCheck(reportedValue = "94", obtainedValue = aov.out$ANOVA$DFd[2], valueType = 'df')
+reportObject <- reproCheck(reportedValue = "2", obtainedValue = aov.out$ANOVA$DFn[2], valueType = 'df')
+#Repeated Measures ANOVA
+aov.out <- aov_ez(data = d.tidy_anova %>%
+mutate(participant_direction = paste(Participant, DirectionofRotation, sep = "_")),
+id = "participant_direction",
+dv = "rangeofmotion",
+# within = c("condition"),
+anova_table = list(correction = 'none', es = 'pes'))
+#Repeated Measures ANOVA
+aov.out <- aov_ez(data = d.tidy_anova %>%
+mutate(participant_direction = paste(Participant, DirectionofRotation, sep = "_")),
+id = "participant_direction",
+dv = "rangeofmotion",
+within = c("condition"),
+anova_table = list(correction = 'none', es = 'pes'))
+reportObject <- reproCheck(reportedValue = "18.9", obtainedValue = aov.out$anova_table$F, valueType = 'F')
+reportObject <- reproCheck(reportedValue = "2", obtainedValue = aov.out$anova_table$`num Df`, valueType = 'df')
+reportObject <- reproCheck(reportedValue = "94", obtainedValue = aov.out$anova_table$`den Df`, valueType = 'df')
+reportObject <- reproCheck(reportedValue = "<.001", obtainedValue = aov.out$anova_table$`Pr(>F)`, valueType = 'p', eyeballCheck = TRUE)
+reportObject <- reproCheck(reportedValue = "0.29", obtainedValue = aov.out$anova_table$pes, valueType = 'pes')
