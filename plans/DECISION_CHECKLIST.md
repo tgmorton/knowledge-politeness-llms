@@ -4,29 +4,29 @@ Before beginning implementation, make decisions on the following items. Check of
 
 ---
 
-## 1. Model Selection
+## 1. Model Selection ✅ COMPLETED
 
 ### Primary Models (Choose 3-5)
 
-- [ ] **Gemma 2 - 2B** (Recommended: ✅ YES - fast baseline)
-- [ ] **Gemma 2 - 9B** (Recommended: ✅ YES - mid-range quality)
-- [ ] **Gemma 2 - 27B** (Optional: only if sufficient GPU)
-- [ ] **Llama 3.1 - 8B** (Recommended: Maybe - alternative to Gemma-9B)
-- [ ] **Llama 3.1 - 70B** (Recommended: ✅ YES - high quality)
-- [ ] **Phi-3 Mini (3.8B)** (Optional: Microsoft's efficient model)
-- [ ] **Mistral 7B v0.3** (Optional: strong performance/size ratio)
+- [x] **Gemma 2 - 2B** (✅ SELECTED - fast baseline)
+- [x] **Gemma 2 - 9B** (✅ SELECTED - mid-range quality)
+- [x] **Gemma 2 - 27B** (✅ SELECTED - high Gemma quality)
+- [ ] **Llama 3.1 - 8B** (❌ Skipped - using Gemma-9B instead)
+- [x] **Llama 3.1 - 70B** (✅ SELECTED - high quality)
+- [x] **GPT-OSS 20B** (✅ SELECTED - pending OpenAI release)
+- [x] **GPT-OSS 120B** (✅ SELECTED - pending OpenAI release)
 
-**Decision**: Which models? _________________________________
+**Decision**: 6 models selected (see FINAL_MODEL_LINEUP.md)
 
-**GPU Requirements**: _____ A100 40GB + _____ A100 80GB
+**GPU Requirements**: 2x A100-80GB (sequential deployment)
 
-### Extraction Model
+### Extraction Model ✅ COMPLETED
 
 - [ ] **DeepSeek-V3** (self-hosted, 2x A100 80GB)
-- [ ] **DeepSeek API** (external, no GPU required)
+- [x] **DeepSeek API** (✅ SELECTED - external, no GPU required)
 - [ ] **Llama 3.1 70B** (repurpose existing model for extraction)
 
-**Decision**: ___________________
+**Decision**: DeepSeek API (simpler, no additional GPUs needed)
 
 ---
 
@@ -55,7 +55,7 @@ Before beginning implementation, make decisions on the following items. Check of
 
 ## 3. Infrastructure Configuration
 
-### Storage Classes (NRP Ceph)
+### Storage Classes (NRP Ceph) ✅ COMPLETED
 
 **Reference**: See `docs/NRP_STORAGE_GUIDE.md` for complete details
 
@@ -66,37 +66,45 @@ Before beginning implementation, make decisions on the following items. Check of
 - [x] Logs (CephFS, shared write): `rook-cephfs`
 
 **Critical Rules Acknowledged**:
-- [ ] ❌ Never install pip/conda on CephFS volumes
-- [ ] ✅ Each job writes to unique files (no conflicts)
-- [ ] ✅ Use RBD for model weights (faster than CephFS)
-- [ ] ❌ Never use `rook-cephfs-ucsd` (may be purged)
+- [x] ❌ Never install pip/conda on CephFS volumes
+- [x] ✅ Each job writes to unique files (no conflicts)
+- [x] ✅ Use RBD for model weights (faster than CephFS)
+- [x] ❌ Never use `rook-cephfs-ucsd` (may be purged)
 
-### GPU Quota and NRP Exceptions
+### GPU Quota and NRP Exceptions ✅ COMPLETED
 
 **Reference**: See `docs/NRP_CLUSTER_GUIDE.md` for NRP cluster policies
 
-**Current GPU allocation**: _____ GPUs
+**Sequential Deployment Strategy**: Deploy one model at a time (<1 day each)
 
-**Requested GPU allocation**: _____ GPUs (recommend 10-15 A100s)
+**Current GPU allocation**: Standard NRP allocation
 
-- [ ] GPU quota request submitted (if needed)
-- [ ] GPU quota request approved
+**Peak GPU requirement**: 2x A100-80GB (sequential deployment)
 
-**NRP Exception Requests** (CRITICAL):
+- [ ] GPU quota request submitted (NOT NEEDED - within limits)
+- [ ] GPU quota request approved (NOT NEEDED)
 
-- [ ] **Join NRP Matrix chat**: https://matrix.to/#/#nrp:matrix.org
-- [ ] **Request exception**: Deployments to run >2 weeks
-  - Default: Deployments auto-deleted after 2 weeks
-  - Need: 2-4 weeks for Grace Project model servers
-  - Status: ___________________
-- [ ] **Request exception**: >2 GPUs per pod (for Llama-70B)
-  - Default: Max 2 GPUs per pod
-  - Need: 4 GPUs for Llama-70B StatefulSet
-  - Status: ___________________
-- [ ] **Request exception**: >32GB RAM per pod (if needed)
-  - Default: Max 32GB RAM per pod
-  - May need for some models
-  - Status: ___________________
+**NRP Exception Requests**: 
+
+✅ **NO EXCEPTIONS REQUIRED!**
+
+**Why No Exceptions Needed**:
+- [x] ✅ **Deployment duration**: Each model runs <1 day (well under 2 week auto-delete limit)
+- [x] ✅ **GPU count**: Max 2 GPUs per pod (using A100-80GB, Llama-70B fits on 2 GPUs)
+- [x] ✅ **Memory limits**: All limits within 20% of requests (NRP compliant)
+- [x] ✅ **Resource quotas**: Peak usage fits within standard allocations
+
+**Previous Plan (Parallel Deployment)** - ❌ NOT USED:
+- ~~Would have needed: 11 GPUs simultaneously for 2+ weeks~~
+- ~~Would have needed: 4 GPU per pod exception for Llama-70B~~
+- ~~Would have needed: Deployment duration exception~~
+
+**Current Plan (Sequential Deployment)** - ✅ COMPLIANT:
+- Deploy one model at a time
+- Run all experiments for that model
+- Clean up (`kubectl delete deployment`)
+- Repeat for next model
+- Total time: ~1 week for all 6 models
 
 ### Network Configuration
 
@@ -114,13 +122,19 @@ Before beginning implementation, make decisions on the following items. Check of
 - [ ] **Probability Extraction**: Batch size = _____ (recommended: 5-10)
 - [ ] **Structured Extraction**: Batch size = _____ (recommended: 10)
 
-### Parallelism
+### Parallelism ✅ COMPLETED
 
 - [ ] Run all models in parallel (faster, more GPUs)
-- [ ] Run models sequentially (slower, fewer GPUs)
+- [x] Run models sequentially (slower, fewer GPUs) ✅ SELECTED
 - [ ] Hybrid: Small models parallel, large models sequential
 
-**Decision**: ___________________
+**Decision**: Sequential deployment (one model at a time)
+
+**Rationale**: 
+- Reduces peak GPU requirement from 11 to 2 GPUs
+- Eliminates need for NRP exceptions
+- Each model deployment <1 day (acceptable runtime)
+- 88% reduction in GPU-hours (216 vs 1,848)
 
 ### Error Handling
 
@@ -289,7 +303,7 @@ Before beginning implementation, make decisions on the following items. Check of
 
 ### Contingency Plans
 
-- [ ] If GPU quota insufficient: ___________________
+- [x] If GPU quota insufficient: Use RTX 3090 cluster (50+ nodes, no quota needed) - see GPU_CONTINGENCY_PLAN.md
 - [ ] If models too slow: ___________________
 - [ ] If extraction quality poor: ___________________
 - [ ] If timeline slips: ___________________
@@ -378,10 +392,11 @@ ___________________________________________________________
 
 ### Cluster Cleanup
 
-- [ ] Delete Jobs: YES/NO
-- [ ] Delete Pods: YES/NO
-- [ ] Delete PVCs: YES/NO (or keep for future runs)
-- [ ] Release GPU quota: YES/NO
+- [ ] Delete Jobs: YES (after each model's experiments complete)
+- [ ] Delete Deployments: YES (after each model's experiments complete)
+- [ ] Delete Pods: YES (automatic when deleting Deployments)
+- [ ] Delete PVCs: YES/NO (decide after experiments - model weights can be re-downloaded)
+- [ ] Release GPU quota: N/A (using standard allocation, no special quota requested)
 
 ### Documentation
 
@@ -412,17 +427,32 @@ ___________________________________________________________
 
 ## Notes & Comments
 
-Use this space for additional notes, concerns, or open questions:
+### Key Decisions Made (2025)
 
-___________________________________________________________
+**Architecture Strategy**:
+- Sequential deployment eliminates ALL NRP exception requirements
+- Using A100-80GB instead of A100-40GB reduces Llama-70B from 4 GPUs to 2 GPUs
+- All resource limits within 20% of requests (NRP policy compliant)
+- Using Deployments (not StatefulSets) for stateless model servers
 
-___________________________________________________________
+**Cost Efficiency**:
+- GPU-hours: 216 (vs 1,848 for parallel deployment) - 88% reduction
+- Peak GPUs: 2 (vs 11 for parallel deployment)
+- Total runtime: ~1 week for all 6 models
 
-___________________________________________________________
+**Compliance Status**:
+✅ All planning documents updated for NRP compliance
+✅ No exceptions required
+✅ See FINAL_MODEL_LINEUP.md, NRP_POLICY_COMPLIANCE_AUDIT.md, and COMPLIANCE_ISSUES_FOUND.md
 
-___________________________________________________________
-
-___________________________________________________________
+**Pending Decisions**:
+- Quantization strategy (fp16 vs AWQ 4-bit)
+- Context length (2048 vs 4096 tokens)
+- Batch sizes for different experiment types
+- Orchestration tool (kubectl vs Argo Workflows)
+- Monitoring approach
+- Temperature settings
+- Error handling parameters
 
 ---
 
