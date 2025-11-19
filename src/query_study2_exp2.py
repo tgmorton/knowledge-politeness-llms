@@ -22,8 +22,10 @@ import pandas as pd
 import numpy as np
 from tqdm import tqdm
 
-from utils.api_client import VLLMClient, compute_distribution_stats
+from utils.model_scorer import ModelScorer
+from utils.api_client import compute_distribution_stats
 from utils.config import ExperimentConfig
+from utils.prompts import construct_study2_exp2_prompt, get_polarity_tokens, get_quality_tokens
 
 logging.basicConfig(
     level=logging.INFO,
@@ -32,79 +34,20 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-def construct_appropriateness_prompt(trial: Dict) -> str:
-    """
-    Construct prompt for appropriateness judgment
-
-    Args:
-        trial: Dictionary with trial data from study2.csv
-
-    Returns:
-        Formatted prompt string
-    """
-    precontext = trial['Precontext'].strip()
-    scenario = trial['Scenario'].strip()
-    utterance = trial['Utterance'].strip()
-    goal = trial['Goal'].strip()
-    state = trial['State'].strip()
-
-    prompt = f"""{precontext}
-
-{scenario}
-
-{trial['SP_Name']} responds: "{utterance}"
-
-Context:
-- {goal}
-- The quality of {trial['LS_Name']}'s work is: {state}
-
-Was {trial['SP_Name']}'s response appropriate or inappropriate? Please respond with "appropriate" or "inappropriate"."""
-
-    return prompt
-
-
-def construct_quality_rating_prompt(trial: Dict) -> str:
-    """
-    Construct prompt for quality rating
-
-    Args:
-        trial: Dictionary with trial data from study2.csv
-
-    Returns:
-        Formatted prompt string
-    """
-    precontext = trial['Precontext'].strip()
-    scenario = trial['Scenario'].strip()
-    utterance = trial['Utterance'].strip()
-    goal = trial['Goal'].strip()
-    state = trial['State'].strip()
-
-    prompt = f"""{precontext}
-
-{scenario}
-
-{trial['SP_Name']} responds: "{utterance}"
-
-Context:
-- {goal}
-- The quality of {trial['LS_Name']}'s work is: {state}
-
-How would you rate {trial['SP_Name']}'s response? Please respond with one word: "excellent", "good", "neutral", "poor", or "terrible"."""
-
-    return prompt
+# Prompt construction moved to utils.prompts for consistency
 
 
 def process_trial(
     trial: Dict,
-    client: VLLMClient,
+    scorer: ModelScorer,
     model_name: str,
 ) -> Dict:
     """
-    Process a single trial with probability extraction
+    Process a single trial with probability extraction using direct model scoring
 
     Args:
         trial: Trial data dictionary
-        client: VLLMClient instance
+        scorer: ModelScorer instance (direct model access)
         model_name: Name of model being used
 
     Returns:
@@ -124,75 +67,58 @@ def process_trial(
         'model_name': model_name,
     }
 
-    # Query 1: Appropriateness (binary)
-    appropriateness_tokens = ["appropriate", "inappropriate"]
+    # Score polarity and quality tokens directly
+    # For Study 2 Exp 2, we score the model generating the response with different polarities and qualities
+    prompt = construct_study2_exp2_prompt(trial, model_name)
+
+    # Get all possible completions: polarity × quality
+    polarities = get_polarity_tokens()  # ["was", "wasn't"]
+    qualities = get_quality_tokens()    # ["terrible", "bad", "good", "amazing"]
+
+    # Build all combinations: "It was terrible", "It was bad", etc.
+    all_options = [f"It {pol} {qual}" for pol in polarities for qual in qualities]
+
     try:
-        appropriateness_prompt = construct_appropriateness_prompt(trial)
-        appropriateness_probs = client.extract_binary_probabilities(
-            appropriateness_prompt,
-            appropriateness_tokens
-        )
+        # Score all 8 options (2 polarities × 4 qualities)
+        all_probs = scorer.score_options(prompt, all_options, normalize=True)
 
-        result['prob_appropriate'] = appropriateness_probs.get('appropriate', 0.5)
-        result['prob_inappropriate'] = appropriateness_probs.get('inappropriate', 0.5)
+        # Extract probabilities for each combination
+        for pol in polarities:
+            for qual in qualities:
+                option = f"It {pol} {qual}"
+                result[f'prob_{pol}_{qual}'] = all_probs.get(option, 0.0)
 
-        # Compute entropy
-        p_app = result['prob_appropriate']
-        p_inapp = result['prob_inappropriate']
-        entropy_app = 0.0
-        if p_app > 1e-10:
-            entropy_app -= p_app * np.log2(p_app)
-        if p_inapp > 1e-10:
-            entropy_app -= p_inapp * np.log2(p_inapp)
-        result['entropy_appropriateness'] = entropy_app
+        # Marginal probabilities
+        # P(was) = sum over all qualities
+        prob_was = sum(all_probs.get(f"It was {q}", 0.0) for q in qualities)
+        prob_wasnt = sum(all_probs.get(f"It wasn't {q}", 0.0) for q in qualities)
+
+        result['prob_was'] = prob_was
+        result['prob_wasnt'] = prob_wasnt
+
+        # Marginal over polarities: P(terrible), P(bad), P(good), P(amazing)
+        for qual in qualities:
+            prob_qual = sum(all_probs.get(f"It {p} {qual}", 0.0) for p in polarities)
+            result[f'prob_{qual}'] = prob_qual
+
+        # Compute entropy over all 8 options
+        entropy = 0.0
+        for prob in all_probs.values():
+            if prob > 1e-10:
+                entropy -= prob * np.log2(prob)
+        result['entropy_response'] = entropy
 
     except Exception as e:
-        logger.error(f"Error querying appropriateness for trial: {e}")
-        result['prob_appropriate'] = 0.5
-        result['prob_inappropriate'] = 0.5
-        result['entropy_appropriateness'] = 1.0
-
-    # Query 2: Quality rating (5-point scale)
-    quality_tokens = ["excellent", "good", "neutral", "poor", "terrible"]
-    try:
-        quality_prompt = construct_quality_rating_prompt(trial)
-        quality_probs, _ = client.extract_token_probabilities(
-            quality_prompt,
-            quality_tokens
-        )
-
-        for token in quality_tokens:
-            result[f'prob_quality_{token}'] = quality_probs.get(token, 0.0)
-
-        # Compute entropy
-        entropy_quality = 0.0
-        for token in quality_tokens:
-            p = quality_probs.get(token, 0.0)
-            if p > 1e-10:
-                entropy_quality -= p * np.log2(p)
-        result['entropy_quality'] = entropy_quality
-
-        # Compute mean quality score (excellent=5, good=4, neutral=3, poor=2, terrible=1)
-        quality_scores = {
-            'excellent': 5,
-            'good': 4,
-            'neutral': 3,
-            'poor': 2,
-            'terrible': 1,
-        }
-        mean_quality = sum(
-            quality_probs.get(token, 0.0) * score
-            for token, score in quality_scores.items()
-        )
-        result['mean_quality_score'] = mean_quality
-
-    except Exception as e:
-        logger.error(f"Error querying quality for trial: {e}")
+        logger.error(f"Error scoring trial: {e}")
         # Uniform distribution as fallback
-        for token in quality_tokens:
-            result[f'prob_quality_{token}'] = 1.0 / len(quality_tokens)
-        result['entropy_quality'] = np.log2(len(quality_tokens))
-        result['mean_quality_score'] = 3.0
+        for pol in polarities:
+            for qual in qualities:
+                result[f'prob_{pol}_{qual}'] = 1.0 / 8
+        result['prob_was'] = 0.5
+        result['prob_wasnt'] = 0.5
+        for qual in qualities:
+            result[f'prob_{qual}'] = 0.25
+        result['entropy_response'] = 3.0  # log2(8)
 
     return result
 
@@ -200,25 +126,25 @@ def process_trial(
 def run_experiment(
     input_file: Path,
     output_file: Path,
-    endpoint: str,
+    model_path: str,
     model_name: str,
     limit: int = None,
 ):
     """
-    Run Study 2 Experiment 2
+    Run Study 2 Experiment 2 using direct model scoring
 
     Args:
         input_file: Path to study2.csv
         output_file: Path to save results
-        endpoint: vLLM server endpoint URL
-        model_name: Name of model being queried
+        model_path: HuggingFace model path
+        model_name: Name of model for output metadata
         limit: Optional limit on number of trials (for testing)
     """
     logger.info(f"Starting Study 2 Experiment 2 (Probability Distributions)")
     logger.info(f"Input: {input_file}")
     logger.info(f"Output: {output_file}")
-    logger.info(f"Endpoint: {endpoint}")
-    logger.info(f"Model: {model_name}")
+    logger.info(f"Model path: {model_path}")
+    logger.info(f"Model name: {model_name}")
 
     # Load input data
     df = pd.read_csv(input_file)
@@ -229,24 +155,22 @@ def run_experiment(
         df = df.head(limit)
         logger.info(f"Limited to {len(df)} trials")
 
-    total_queries = len(df) * 2
-    logger.info(f"Total queries to make: {total_queries} (2 per trial)")
+    logger.info(f"Total trials to score: {len(df)} (scoring 8 options per trial)")
 
-    # Initialize client
-    config = ExperimentConfig()
-    client = VLLMClient(base_url=endpoint, config=config)
+    # Initialize model scorer
+    logger.info("Loading model for direct scoring...")
+    scorer = ModelScorer(model_name=model_path)
 
     # Process trials
     results = []
     for idx, row in tqdm(df.iterrows(), total=len(df), desc="Processing trials"):
         trial = row.to_dict()
-        result = process_trial(trial, client, model_name)
+        result = process_trial(trial, scorer, model_name)
         results.append(result)
 
         # Log progress every 100 trials
         if (idx + 1) % 100 == 0:
-            queries_completed = (idx + 1) * 2
-            logger.info(f"Completed {idx + 1}/{len(df)} trials ({queries_completed}/{total_queries} queries)")
+            logger.info(f"Completed {idx + 1}/{len(df)} trials")
 
     # Convert to DataFrame
     results_df = pd.DataFrame(results)
@@ -261,8 +185,8 @@ def run_experiment(
     # Note: Validation for Study 2 Exp 2 not yet implemented in validation.py
     logger.info("Note: Formal validation not yet implemented for Study 2 Exp 2")
 
-    # Close client
-    client.close()
+    # Close scorer
+    scorer.close()
 
     logger.info("Experiment complete!")
 
@@ -284,16 +208,16 @@ def main():
         help='Path to save output CSV'
     )
     parser.add_argument(
-        '--endpoint',
+        '--model-path',
         type=str,
         required=True,
-        help='vLLM server endpoint (e.g., http://localhost:8000)'
+        help='HuggingFace model path (e.g., google/gemma-2-2b-it)'
     )
     parser.add_argument(
         '--model-name',
         type=str,
-        default='gemma-2-2b-it',
-        help='Model name for output metadata'
+        default=None,
+        help='Model name for output metadata (defaults to model-path)'
     )
     parser.add_argument(
         '--limit',
@@ -304,11 +228,14 @@ def main():
 
     args = parser.parse_args()
 
+    # Default model_name to model_path if not specified
+    model_name = args.model_name or args.model_path
+
     run_experiment(
         input_file=args.input,
         output_file=args.output,
-        endpoint=args.endpoint,
-        model_name=args.model_name,
+        model_path=args.model_path,
+        model_name=model_name,
         limit=args.limit,
     )
 
