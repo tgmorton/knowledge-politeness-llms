@@ -19,6 +19,16 @@ variables:
 build-query-generator:
   stage: build-and-push
 
+  # Only rebuild if Docker-related files changed
+  only:
+    refs:
+      - main
+      - merge_requests
+    changes:
+      - docker/query-generator/**/*
+      - src/**/*
+      - .gitlab-ci.yml
+
   script:
     # Configure registry authentication (CI variables auto-provided by GitLab)
     - echo "{\"auths\":{\"$CI_REGISTRY\":{\"username\":\"$CI_REGISTRY_USER\",\"password\":\"$CI_REGISTRY_PASSWORD\"}}}" > /kaniko/.docker/config.json
