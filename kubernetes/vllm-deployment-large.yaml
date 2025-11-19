@@ -17,11 +17,11 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: vllm-large-model
-  namespace: grace-experiments
+  namespace: lemn-lab
   labels:
     app: vllm
     model: large
-    project: grace-experiments
+    project: lemn-lab
     resource-tier: high  # Indicates exception needed
   annotations:
     exception-required: "true"

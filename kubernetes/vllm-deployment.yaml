@@ -11,11 +11,11 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: vllm-gemma-2b
-  namespace: grace-experiments
+  namespace: lemn-lab
   labels:
     app: vllm
     model: gemma-2b
-    project: grace-experiments
+    project: lemn-lab
 spec:
   replicas: 1
   selector:

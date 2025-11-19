@@ -19,7 +19,7 @@ apiVersion: batch/v1
 kind: Job
 metadata:
   name: grace-study1-exp1-gemma2b
-  namespace: grace-experiments
+  namespace: lemn-lab
   labels:
     app: grace-experiment
     study: "1"

@@ -1,8 +1,8 @@
 apiVersion: v1
 kind: Namespace
 metadata:
-  name: grace-experiments
+  name: lemn-lab
   labels:
-    name: grace-experiments
+    name: lemn-lab
     project: grace-knowledge-politeness
     purpose: llm-experiments
