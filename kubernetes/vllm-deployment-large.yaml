@@ -1,0 +1,128 @@
+---
+# NRP vLLM Deployment for Larger Models (Gemma-27B, Llama-70B)
+#
+# REQUIRES EXCEPTION APPROVAL - High resource requests
+# Use this for: Gemma-27B, Llama-70B, GPT-OSS-120B
+#
+# Before deploying, request exception via Matrix:
+# https://matrix.to/#/#nrp:matrix.org
+#
+# Key compliance points:
+# - Uses Deployment (not StatefulSet) - stateless model server
+# - Resource limits within 20% of requests
+# - Dual GPU (A100-80GB) for tensor parallelism
+# - Auto-deletes after 2 weeks (deployment lifecycle)
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vllm-large-model
+  namespace: grace-experiments
+  labels:
+    app: vllm
+    model: large
+    project: grace-experiments
+    resource-tier: high  # Indicates exception needed
+  annotations:
+    exception-required: "true"
+    expected-gpu-utilization: ">80%"
+    expected-runtime: "<24h"
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: vllm
+      model: large
+  template:
+    metadata:
+      labels:
+        app: vllm
+        model: large
+    spec:
+      # Node selection for GPU availability
+      nodeSelector:
+        nvidia.com/gpu.product: NVIDIA-A100-SXM4-80GB
+
+      # Tolerations for GPU nodes
+      tolerations:
+        - key: nvidia.com/gpu
+          operator: Exists
+          effect: NoSchedule
+
+      containers:
+      - name: vllm-server
+        image: vllm/vllm-openai:latest
+        imagePullPolicy: Always
+
+        command:
+          - python3
+          - -m
+          - vllm.entrypoints.openai.api_server
+
+        args:
+          - --model=meta-llama/Llama-3-70b-chat-hf  # Example: change as needed
+          - --dtype=float16
+          - --max-model-len=4096
+          - --tensor-parallel-size=2  # Use 2 GPUs
+          - --host=0.0.0.0
+          - --port=8000
+
+        ports:
+          - containerPort: 8000
+            name: http
+            protocol: TCP
+
+        # HIGH RESOURCE CONFIGURATION
+        # REQUIRES EXCEPTION APPROVAL
+        # Request via: https://matrix.to/#/#nrp:matrix.org
+        resources:
+          requests:
+            nvidia.com/gpu: 2      # Dual GPU
+            memory: "128Gi"         # High memory for 70B models
+            cpu: "32"               # High CPU for tokenization
+          limits:
+            nvidia.com/gpu: 2
+            memory: "153Gi"         # 120% of request - COMPLIANT ✅
+            cpu: "38"               # 119% of request - COMPLIANT ✅
+
+        # Liveness probe to ensure server is responsive
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8000
+          initialDelaySeconds: 180  # Longer for large models
+          periodSeconds: 30
+          timeoutSeconds: 10
+          failureThreshold: 3
+
+        # Readiness probe to know when server is ready
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8000
+          initialDelaySeconds: 120  # Longer for large models
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+
+        env:
+          - name: HF_HOME
+            value: /tmp/huggingface
+          - name: TRANSFORMERS_CACHE
+            value: /tmp/huggingface
+          - name: NCCL_DEBUG
+            value: INFO  # For multi-GPU debugging
+
+        volumeMounts:
+          - name: shm
+            mountPath: /dev/shm
+
+      volumes:
+        # Larger shared memory for large models
+        - name: shm
+          emptyDir:
+            medium: Memory
+            sizeLimit: 64Gi
+
+      # Restart policy
+      restartPolicy: Always

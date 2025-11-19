@@ -1,0 +1,21 @@
+---
+# Service to expose vLLM endpoint
+apiVersion: v1
+kind: Service
+metadata:
+  name: vllm-gemma-2b
+  namespace: grace-experiments
+  labels:
+    app: vllm
+    model: gemma-2b
+spec:
+  type: ClusterIP
+  selector:
+    app: vllm
+    model: gemma-2b
+  ports:
+    - name: http
+      port: 8000
+      targetPort: 8000
+      protocol: TCP
+  sessionAffinity: None

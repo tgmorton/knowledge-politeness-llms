@@ -1,0 +1,116 @@
+---
+# NRP-Compliant vLLM Deployment for Gemma-2B
+#
+# Key compliance points:
+# - Uses Deployment (not StatefulSet) - stateless model server
+# - Resource limits within 20% of requests
+# - Single GPU (A100-80GB)
+# - Auto-deletes after 2 weeks (deployment lifecycle)
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vllm-gemma-2b
+  namespace: grace-experiments
+  labels:
+    app: vllm
+    model: gemma-2b
+    project: grace-experiments
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: vllm
+      model: gemma-2b
+  template:
+    metadata:
+      labels:
+        app: vllm
+        model: gemma-2b
+    spec:
+      # Node selection for GPU availability
+      nodeSelector:
+        nvidia.com/gpu.product: NVIDIA-A100-SXM4-80GB
+
+      # Tolerations for GPU nodes
+      tolerations:
+        - key: nvidia.com/gpu
+          operator: Exists
+          effect: NoSchedule
+
+      containers:
+      - name: vllm-server
+        image: vllm/vllm-openai:latest
+        imagePullPolicy: Always
+
+        command:
+          - python3
+          - -m
+          - vllm.entrypoints.openai.api_server
+
+        args:
+          - --model=google/gemma-2-2b-it
+          - --dtype=float16
+          - --max-model-len=4096
+          - --tensor-parallel-size=1
+          - --host=0.0.0.0
+          - --port=8000
+
+        ports:
+          - containerPort: 8000
+            name: http
+            protocol: TCP
+
+        # NRP-compliant resource specifications
+        # Limits must be within 20% of requests
+        # UPDATED: Using default limits (no exception needed)
+        # Original: 64Gi/32 CPU (required exception approval)
+        resources:
+          requests:
+            nvidia.com/gpu: 1
+            memory: "32Gi"    # Within default 32GB limit
+            cpu: "16"         # Within default 16 CPU limit
+          limits:
+            nvidia.com/gpu: 1
+            memory: "38Gi"    # 119% of request - COMPLIANT ✅
+            cpu: "19"         # 119% of request - COMPLIANT ✅
+
+        # Liveness probe to ensure server is responsive
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8000
+          initialDelaySeconds: 120
+          periodSeconds: 30
+          timeoutSeconds: 10
+          failureThreshold: 3
+
+        # Readiness probe to know when server is ready
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8000
+          initialDelaySeconds: 60
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+
+        env:
+          - name: HF_HOME
+            value: /tmp/huggingface
+          - name: TRANSFORMERS_CACHE
+            value: /tmp/huggingface
+
+        volumeMounts:
+          - name: shm
+            mountPath: /dev/shm
+
+      volumes:
+        # Shared memory for model loading
+        - name: shm
+          emptyDir:
+            medium: Memory
+            sizeLimit: 16Gi  # Reduced to match memory limits
+
+      # Restart policy
+      restartPolicy: Always

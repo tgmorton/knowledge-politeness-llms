@@ -1,0 +1,60 @@
+---
+# Persistent Volume Claims for Grace Project
+#
+# Storage strategy:
+# - Input data: CephFS (shared read across all jobs)
+# - Output results: CephFS (shared write, all jobs write to same volume)
+# - Model weights: EmptyDir (each deployment downloads as needed)
+#
+# CephFS allows multiple pods to read/write simultaneously
+
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: grace-input-data
+  namespace: grace-experiments
+  labels:
+    app: grace-experiments
+    type: input-data
+spec:
+  accessModes:
+    - ReadOnlyMany  # Multiple jobs can read simultaneously
+  resources:
+    requests:
+      storage: 1Gi  # Small - just CSV files
+  storageClassName: rook-cephfs  # Shared filesystem
+
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: grace-results
+  namespace: grace-experiments
+  labels:
+    app: grace-experiments
+    type: results
+spec:
+  accessModes:
+    - ReadWriteMany  # Multiple jobs can write simultaneously
+  resources:
+    requests:
+      storage: 50Gi  # Large - stores all results from all models
+  storageClassName: rook-cephfs  # Shared filesystem
+
+---
+# Optional: Separate volume for reasoning traces (can get large)
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: grace-reasoning-traces
+  namespace: grace-experiments
+  labels:
+    app: grace-experiments
+    type: reasoning-traces
+spec:
+  accessModes:
+    - ReadWriteMany
+  resources:
+    requests:
+      storage: 100Gi  # Reasoning traces can be large
+  storageClassName: rook-cephfs
