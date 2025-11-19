@@ -671,15 +671,115 @@ Before running full experiments, validate each model:
 
 ---
 
+## Reasoning Model vs Non-Reasoning Model Strategy
+
+### Problem
+
+Instruction-tuned models (Gemma-2, Llama-3) tend to produce verbose Chain-of-Thought (CoT) reasoning even when not requested, leading to lengthy responses with explanations before the actual answer.
+
+Example unwanted output:
+```
+**Reasoning:**
+* We know that 3 students took the exam.
+* Mark has looked at 2 exams and found 2 with passing grades.
+...
+**Answer:**
+The answer is **all 3** exams have passing grades.
+```
+
+### Solution: Model-Aware Prompting
+
+**Implemented via `src/utils/model_config.py`**:
+
+1. **Model Classification**:
+   - **Reasoning models** (DeepSeek R1, o1, o3): `is_reasoning_model=True`
+   - **Non-reasoning models** (Gemma-2, Llama-3): `is_reasoning_model=False`
+
+2. **Prompting Strategy**:
+   - **Non-reasoning models**: Add explicit instruction "Answer directly without explanation:"
+   - **Reasoning models**: Request reasoning "Please provide your reasoning and answer."
+
+3. **Parameter Tuning**:
+   - **Non-reasoning models**:
+     - `temperature=0.3` (more deterministic)
+     - `max_tokens=100` for text, `50` for structured
+   - **Reasoning models**:
+     - `temperature=0.7` (allow exploration)
+     - `max_tokens=500+` for text (allow full reasoning traces)
+
+4. **Reasoning Trace Capture**:
+   - For reasoning models, capture full trace in separate JSONL file
+   - Link to main results via `result_id`
+
+### Configuration Example
+
+From `model_config.py`:
+```python
+"google/gemma-2-2b-it": ModelConfig(
+    is_reasoning_model=False,
+    use_direct_answer_prompt=True,  # Suppress CoT
+    max_tokens_text=100,  # Limit verbosity
+    temperature_text=0.3,  # More deterministic
+)
+
+"deepseek/deepseek-r1": ModelConfig(
+    is_reasoning_model=True,
+    use_direct_answer_prompt=False,  # Let it reason!
+    max_tokens_text=2000,  # Allow full traces
+    temperature_text=0.7,
+)
+```
+
+### Prompt Examples
+
+**Study 1 Exp 1 - Non-reasoning model**:
+```
+{scenario}
+
+{prior_question}
+
+{speech}
+
+{posterior_question}
+
+Answer directly without explanation:
+```
+
+**Study 1 Exp 1 - Reasoning model**:
+```
+{scenario}
+
+{prior_question}
+
+{speech}
+
+{posterior_question}
+
+Please provide your reasoning and answer.
+```
+
+**Study 2 Exp 1 - Non-reasoning model**:
+```
+You are Emma. If Emma wanted to make Wendy feel good, rather than give informative feedback.
+
+The quality of Wendy's work is: 0 hearts
+
+Respond to Wendy's question using ONLY this exact format (no explanation):
+"It [was/wasn't] [terrible/bad/good/amazing]"
+
+Your response:
+```
+
 ## Open Questions to Resolve
 
-1. **Chat API vs Completion API**: Which to use? (Recommend: Chat API)
-2. **System prompt text**: Exact wording? (Recommend: Test with/without)
-3. **Temperature values**: Confirm 0.7 for Exp 1, 1.0 for Exp 2?
-4. **Max tokens**: 100 for Exp 1, 1 for Exp 2?
-5. **Stop tokens**: Let vLLM handle, or configure explicitly?
+1. **Chat API vs Completion API**: Which to use? (Recommend: Chat API for better system message support)
+2. **System prompt text**: Exact wording? (Implemented in model_config.py, test effectiveness)
+3. **Temperature values**: Using 0.3 for non-reasoning text, 1.0 for probabilities - validate effectiveness
+4. **Max tokens**: 100 for Exp 1, 1 for Exp 2, 50 for structured - adjust based on test results
+5. **Stop tokens**: Configured per model in model_config.py
 6. **Percentage tokenization**: Test each model, document findings
 7. **GPT-OSS specifics**: Wait for release, update this doc
+8. **Reasoning suppression effectiveness**: Test with Gemma-2B to validate direct answer prompting works
 
 ---
 
