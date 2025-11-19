@@ -40,9 +40,9 @@ build-query-generator:
     - main
     - merge_requests
 
-  # Use Nautilus runners
-  tags:
-    - nautilus
+  # Use any available runner (instance runners)
+  # tags:
+  #   - nautilus
 
 # Optional: Build on version tags for releases
 build-release:
@@ -62,8 +62,8 @@ build-release:
   only:
     - tags
 
-  tags:
-    - nautilus
+  # tags:
+  #   - nautilus
 
 # Future: Add linting, testing, validation stages
 # - lint:
