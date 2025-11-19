@@ -46,11 +46,11 @@ This document helps Claude (and other AI assistants) understand the Grace Projec
 
 **When questions involve NRP cluster policies or compliance:**
 
-1. **`docs/NRP_POLICY_COMPLIANCE_AUDIT.md`** - Comprehensive NRP policy synthesis
+1. **`docs/k8s/NRP_POLICY_COMPLIANCE_AUDIT.md`** - Comprehensive NRP policy synthesis
 2. **`docs/COMPLIANCE_ISSUES_FOUND.md`** - Historical issues found (now fixed)
-3. **`docs/NRP_CLUSTER_GUIDE.md`** - Complete NRP cluster documentation
-4. **`docs/NRP_STORAGE_GUIDE.md`** - Storage classes and Ceph details
-5. **`docs/NRP_A100_NODES.md`** - Available A100 nodes on cluster
+3. **`docs/k8s/NRP_CLUSTER_GUIDE.md`** - Complete NRP cluster documentation
+4. **`docs/k8s/NRP_STORAGE_GUIDE.md`** - Storage classes and Ceph details
+5. **`docs/k8s/NRP_A100_NODES.md`** - Available A100 nodes on cluster
 
 ### Architecture & Infrastructure
 
@@ -64,8 +64,8 @@ This document helps Claude (and other AI assistants) understand the Grace Projec
 
 **When discussing GPU availability or fallback options:**
 
-1. **`docs/GPU_CONTINGENCY_PLAN.md`** - 5-tier fallback strategy (RTX 3090, L40, etc.)
-2. **`docs/NRP_A100_NODES.md`** - A100 node availability
+1. **`docs/k8s/GPU_CONTINGENCY_PLAN.md`** - 5-tier fallback strategy (RTX 3090, L40, etc.)
+2. **`docs/k8s/NRP_A100_NODES.md`** - A100 node availability
 
 ### Research Methodology
 
@@ -248,8 +248,8 @@ See `plans/DECISION_CHECKLIST.md` for operational decisions still needed:
 ### Task: Troubleshoot NRP Cluster Issues
 
 **Documents to reference:**
-1. `docs/NRP_CLUSTER_GUIDE.md` - Complete cluster documentation
-2. `docs/NRP_POLICY_COMPLIANCE_AUDIT.md` - Policy synthesis
+1. `docs/k8s/NRP_CLUSTER_GUIDE.md` - Complete cluster documentation
+2. `docs/k8s/NRP_POLICY_COMPLIANCE_AUDIT.md` - Policy synthesis
 3. Join NRP Matrix chat: https://matrix.to/#/#nrp:matrix.org
 
 **Common issues:**
@@ -260,8 +260,8 @@ See `plans/DECISION_CHECKLIST.md` for operational decisions still needed:
 ### Task: Plan for GPU Unavailability
 
 **Documents to reference:**
-1. `docs/GPU_CONTINGENCY_PLAN.md` - 5-tier fallback strategy
-2. `docs/NRP_A100_NODES.md` - Current A100 availability
+1. `docs/k8s/GPU_CONTINGENCY_PLAN.md` - 5-tier fallback strategy
+2. `docs/k8s/NRP_A100_NODES.md` - Current A100 availability
 
 **Fallback order:**
 1. RTX 3090 cluster (50+ nodes, no quota)
