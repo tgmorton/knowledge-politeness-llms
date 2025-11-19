@@ -44,8 +44,8 @@ spec:
 
       containers:
       - name: experiment-runner
-        image: grace-query-generator:latest
-        imagePullPolicy: IfNotPresent
+        image: gitlab-registry.nrp-nautilus.io/thmorton/grace-project/query-generator:latest
+        imagePullPolicy: Always  # Always pull latest from registry
 
         command:
           - python3
