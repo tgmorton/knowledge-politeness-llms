@@ -1,0 +1,106 @@
+---
+# Kubernetes Job Template for Experiment 2 on RTX 3090
+#
+# Alternative to A100 deployment for direct model scoring
+# RTX 3090: 24GB VRAM (vs 80GB on A100)
+#
+# Supports:
+# - Gemma-2B (no issues)
+# - Gemma-9B (works well)
+# - Gemma-27B (may need quantization)
+
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: grace-study1-exp2-gemma2b-rtx3090
+  namespace: lemn-lab
+  labels:
+    app: grace-experiment
+    study: "1"
+    experiment: "2"
+    model: gemma-2b
+    gpu: rtx3090
+spec:
+  backoffLimit: 0
+  ttlSecondsAfterFinished: 3600
+
+  template:
+    metadata:
+      labels:
+        app: grace-experiment
+        study: "1"
+        experiment: "2"
+        model: gemma-2b
+        gpu: rtx3090
+    spec:
+      restartPolicy: Never
+
+      # Target RTX 3090 nodes
+      nodeSelector:
+        nvidia.com/gpu.product: NVIDIA-GeForce-RTX-3090
+
+      tolerations:
+        - key: nvidia.com/gpu
+          operator: Exists
+          effect: NoSchedule
+
+      containers:
+      - name: experiment-runner
+        image: gitlab-registry.nrp-nautilus.io/thmorton/grace-project/query-generator:latest
+        imagePullPolicy: Always
+
+        command:
+          - python3
+          - /app/src/query_study1_exp2.py
+
+        args:
+          - --input=/data/input/study1.csv
+          - --output=/data/results/study1_exp2_gemma2b_rtx3090_$(TIMESTAMP).csv
+          - --model-path=google/gemma-2-2b-it
+          - --model-name=gemma-2-2b-it
+
+        env:
+          - name: TIMESTAMP
+            value: "20250119_000000"
+          - name: PYTHONUNBUFFERED
+            value: "1"
+          - name: HF_HOME
+            value: /tmp/huggingface
+          - name: TRANSFORMERS_CACHE
+            value: /tmp/huggingface
+
+        # RTX 3090 resources (24GB VRAM)
+        resources:
+          requests:
+            nvidia.com/gpu: 1
+            memory: "16Gi"   # Sufficient for Gemma-2B/9B
+            cpu: "4"
+          limits:
+            nvidia.com/gpu: 1
+            memory: "19Gi"   # 119% - COMPLIANT
+            cpu: "4800m"     # 120% - COMPLIANT
+
+        volumeMounts:
+          - name: input-data
+            mountPath: /data/input
+            readOnly: true
+
+          - name: results
+            mountPath: /data/results
+
+          - name: shm
+            mountPath: /dev/shm
+
+      volumes:
+        - name: input-data
+          persistentVolumeClaim:
+            claimName: grace-input-data
+
+        - name: results
+          persistentVolumeClaim:
+            claimName: grace-results
+
+        - name: shm
+          emptyDir:
+            medium: Memory
+            sizeLimit: 8Gi

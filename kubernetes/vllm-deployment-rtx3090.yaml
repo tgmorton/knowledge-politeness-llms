@@ -1,0 +1,120 @@
+---
+# vLLM Deployment for RTX 3090 (24GB VRAM)
+#
+# Alternative deployment for when A100s are unavailable or busy
+# 48 RTX 3090 nodes available on cluster
+#
+# Supports:
+# - Gemma-2B (full precision)
+# - Gemma-9B (full precision or AWQ 4-bit)
+# - Gemma-27B (AWQ 4-bit quantization required)
+#
+# For Llama-70B: Use A100 nodes or heavy quantization
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vllm-gemma-2b-rtx3090
+  namespace: lemn-lab
+  labels:
+    app: vllm
+    model: gemma-2b
+    gpu: rtx3090
+    project: grace-experiments
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: vllm
+      model: gemma-2b
+      gpu: rtx3090
+  template:
+    metadata:
+      labels:
+        app: vllm
+        model: gemma-2b
+        gpu: rtx3090
+    spec:
+      # Target RTX 3090 nodes (24GB VRAM)
+      nodeSelector:
+        nvidia.com/gpu.product: NVIDIA-GeForce-RTX-3090
+
+      # Tolerations for GPU nodes
+      tolerations:
+        - key: nvidia.com/gpu
+          operator: Exists
+          effect: NoSchedule
+
+      containers:
+      - name: vllm-server
+        image: vllm/vllm-openai:latest
+        imagePullPolicy: Always
+
+        command:
+          - python3
+          - -m
+          - vllm.entrypoints.openai.api_server
+
+        args:
+          - --model=google/gemma-2-2b-it
+          - --dtype=float16
+          - --max-model-len=2048  # Reduced for RTX 3090
+          - --tensor-parallel-size=1
+          - --host=0.0.0.0
+          - --port=8000
+          # Uncomment for quantization (if needed for larger models):
+          # - --quantization=awq
+
+        ports:
+          - containerPort: 8000
+            name: http
+            protocol: TCP
+
+        # Reduced resources for RTX 3090 (24GB VRAM)
+        resources:
+          requests:
+            nvidia.com/gpu: 1
+            memory: "16Gi"   # Less than A100
+            cpu: "8"         # Less than A100
+          limits:
+            nvidia.com/gpu: 1
+            memory: "19Gi"   # 119% of request - COMPLIANT
+            cpu: "9600m"     # 120% of request - COMPLIANT
+
+        # Health probes
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8000
+          initialDelaySeconds: 120
+          periodSeconds: 30
+          timeoutSeconds: 10
+          failureThreshold: 3
+
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8000
+          initialDelaySeconds: 60
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+
+        env:
+          - name: HF_HOME
+            value: /tmp/huggingface
+          - name: TRANSFORMERS_CACHE
+            value: /tmp/huggingface
+
+        volumeMounts:
+          - name: shm
+            mountPath: /dev/shm
+
+      volumes:
+        # Shared memory for model loading
+        - name: shm
+          emptyDir:
+            medium: Memory
+            sizeLimit: 8Gi  # Smaller than A100 deployment
+
+      restartPolicy: Always
