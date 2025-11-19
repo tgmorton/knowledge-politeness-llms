@@ -1,0 +1,17 @@
+# Python dependencies for Grace Project query scripts
+
+# HTTP client
+httpx>=0.25.0
+
+# Data processing
+pandas>=2.0.0
+numpy>=1.24.0
+
+# Scientific computing
+scipy>=1.10.0
+
+# Progress bars
+tqdm>=4.65.0
+
+# Type hints support
+typing-extensions>=4.5.0
