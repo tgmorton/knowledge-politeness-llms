@@ -98,7 +98,7 @@ spec:
 
         - name: results
           persistentVolumeClaim:
-            claimName: grace-results
+            claimName: thomas-grace-results
 
         - name: shm
           emptyDir:

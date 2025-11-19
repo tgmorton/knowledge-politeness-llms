@@ -97,20 +97,28 @@ spec:
 
         env:
           - name: HF_HOME
-            value: /tmp/huggingface
+            value: /models/.cache
           - name: TRANSFORMERS_CACHE
-            value: /tmp/huggingface
+            value: /models/.cache
 
         volumeMounts:
           - name: shm
             mountPath: /dev/shm
+
+          - name: model-cache
+            mountPath: /models
 
       volumes:
         # Shared memory for model loading
         - name: shm
           emptyDir:
             medium: Memory
-            sizeLimit: 16Gi  # Reduced to match memory limits
+            sizeLimit: 16Gi
+
+        # Shared model cache (persistent across pod restarts)
+        - name: model-cache
+          persistentVolumeClaim:
+            claimName: thomas-grace-model-cache
 
       # Restart policy
       restartPolicy: Always

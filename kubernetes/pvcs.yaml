@@ -1,60 +1,45 @@
 ---
 # Persistent Volume Claims for Grace Project
 #
-# Storage strategy:
-# - Input data: CephFS (shared read across all jobs)
-# - Output results: CephFS (shared write, all jobs write to same volume)
-# - Model weights: EmptyDir (each deployment downloads as needed)
+# Simplified storage strategy:
+# - Input data: Included in Docker image (CSV files are small)
+# - Output results: Shared PVC for all experiment outputs
+# - Model weights: Shared cache PVC (download once, use many times)
+# - Reasoning traces: Skipped for now (can add later if needed)
 #
-# CephFS allows multiple pods to read/write simultaneously
+# Using rook-cephfs (RWX) for multi-pod read/write access
 
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
-  name: grace-input-data
+  name: thomas-grace-results
   namespace: lemn-lab
   labels:
-    app: lemn-lab
-    type: input-data
-spec:
-  accessModes:
-    - ReadOnlyMany  # Multiple jobs can read simultaneously
-  resources:
-    requests:
-      storage: 1Gi  # Small - just CSV files
-  storageClassName: rook-cephfs  # Shared filesystem
-
----
-apiVersion: v1
-kind: PersistentVolumeClaim
-metadata:
-  name: grace-results
-  namespace: lemn-lab
-  labels:
-    app: lemn-lab
-    type: results
+    project: grace-experiments
+    purpose: results
+    owner: thomas
 spec:
   accessModes:
     - ReadWriteMany  # Multiple jobs can write simultaneously
   resources:
     requests:
-      storage: 50Gi  # Large - stores all results from all models
-  storageClassName: rook-cephfs  # Shared filesystem
+      storage: 50Gi  # All experiment outputs (6 models × 4 experiments)
+  storageClassName: rook-cephfs
 
 ---
-# Optional: Separate volume for reasoning traces (can get large)
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
-  name: grace-reasoning-traces
+  name: thomas-grace-model-cache
   namespace: lemn-lab
   labels:
-    app: lemn-lab
-    type: reasoning-traces
+    project: grace-experiments
+    purpose: model-cache
+    owner: thomas
 spec:
   accessModes:
-    - ReadWriteMany
+    - ReadWriteMany  # All pods share the cache
   resources:
     requests:
-      storage: 100Gi  # Reasoning traces can be large
+      storage: 250Gi  # Room for 2-3 models cached at once
   storageClassName: rook-cephfs

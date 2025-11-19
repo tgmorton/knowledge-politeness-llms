@@ -23,8 +23,11 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy source code (including utils modules)
 COPY src/ /app/src/
 
-# Create directories for data and outputs
-RUN mkdir -p /app/data /app/outputs
+# Copy input data (CSV files included in image)
+COPY data/ /app/data/
+
+# Create output directory
+RUN mkdir -p /app/outputs
 
 # Set Python path
 ENV PYTHONPATH=/app
