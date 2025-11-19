@@ -39,6 +39,28 @@ kubectl get nodes -l nvidia.com/gpu.product=NVIDIA-GeForce-RTX-3090
 #   nvidia.com/gpu.product: NVIDIA-GeForce-RTX-3090
 ```
 
+## Architecture: Hybrid Deployment
+
+Our project uses a **hybrid architecture** that optimizes for both performance and cost:
+
+### Experiment 1: vLLM API (Text Generation)
+- **What**: Study 1 Exp 1 and Study 2 Exp 1
+- **How**: Uses vLLM server deployed as Kubernetes Deployment
+- **Job Requirements**: CPU-only (4Gi RAM, 2 CPU cores)
+- **Why**: Fast text generation with OpenAI-compatible API
+
+### Experiment 2: Direct Model Scoring (Probability Extraction)
+- **What**: Study 1 Exp 2 and Study 2 Exp 2
+- **How**: Loads model directly in Kubernetes Job (no vLLM server)
+- **Job Requirements**: GPU required (1x A100-80GB, 32Gi RAM, 8 CPU cores)
+- **Why**: Accurate probability extraction by scoring predefined options
+
+**Benefits of Hybrid Approach:**
+- ✅ Exp 1: Faster, efficient text generation
+- ✅ Exp 2: Accurate probabilities (no generation ambiguity)
+- ✅ No need to keep vLLM running during Exp 2 (saves GPU time)
+- ✅ Each approach optimized for its task
+
 ## Compliance Review Summary
 
 ✅ **Our manifests are NRP-compliant!**
@@ -46,7 +68,8 @@ kubectl get nodes -l nvidia.com/gpu.product=NVIDIA-GeForce-RTX-3090
 Key points:
 - ✅ Resource limits within 20% of requests
 - ✅ Using Deployment (correct for stateless servers)
-- ✅ 1 GPU (within default limit of 2)
+- ✅ Using Jobs (correct for batch processing)
+- ✅ Peak GPU: 1 per job/deployment (within default limit of 2)
 - ✅ **No exception required** (with default resource limits)
 
 See full compliance audit in the agent output above.
@@ -137,18 +160,55 @@ curl http://localhost:8000/health
 # Should return: {"status":"ok"}
 ```
 
-### Step 6: Run Experiments!
+### Step 6: Run Experiments
+
+**Option A: Automated Script (Recommended)**
+
+Use the automated deployment script that handles everything:
 
 ```bash
-# Run full test suite (10 trials each)
-./tests/test_with_samples.sh http://localhost:8000 gemma-2-2b-it
+# Deploy model, run all 4 experiments, download results
+./scripts/deploy_model_k8s.sh gemma-2b
 
-# Or run full experiments
+# Available models: gemma-2b, gemma-9b, gemma-27b, llama-70b
+```
+
+This script:
+1. Deploys vLLM server
+2. Runs Experiment 1 for both studies (vLLM API)
+3. Runs Experiment 2 for both studies (direct scoring with GPU)
+4. Downloads results
+5. Cleans up
+
+**Option B: Manual Port-Forward (Local Development)**
+
+For testing from your Mac with port-forward:
+
+```bash
+# In one terminal: Port forward
+kubectl port-forward svc/vllm-gemma-2b 8000:8000 -n grace-experiments
+
+# In another terminal: Run experiments locally
 python3 src/query_study1_exp1.py \
     --input data/study1.csv \
     --output outputs/study1_exp1_gemma2b.csv \
     --endpoint http://localhost:8000 \
     --model-name gemma-2-2b-it
+```
+
+**Option C: Run Jobs Directly**
+
+For more control, deploy jobs manually:
+
+```bash
+# Experiment 1 (needs vLLM server running)
+kubectl apply -f kubernetes/job-exp1-template.yaml
+
+# Experiment 2 (no vLLM server needed, uses GPU directly)
+kubectl apply -f kubernetes/job-exp2-template.yaml
+
+# Monitor progress
+kubectl get jobs -n grace-experiments -w
 ```
 
 ## Monitoring Your Deployment
