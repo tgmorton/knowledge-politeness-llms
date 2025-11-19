@@ -1,6 +1,6 @@
 # Python dependencies for Grace Project query scripts
 
-# HTTP client
+# HTTP client (for Experiment 1 - vLLM API)
 httpx>=0.25.0
 
 # Data processing
@@ -15,3 +15,10 @@ tqdm>=4.65.0
 
 # Type hints support
 typing-extensions>=4.5.0
+
+# Model scoring dependencies (for Experiment 2 - direct model access)
+torch>=2.0.0
+transformers>=4.35.0
+accelerate>=0.25.0
+sentencepiece>=0.1.99
+protobuf>=4.25.0

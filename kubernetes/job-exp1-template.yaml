@@ -1,0 +1,98 @@
+---
+# Kubernetes Job Template for Experiment 1 (Text Generation via vLLM)
+#
+# Experiment 1 uses vLLM API for text generation:
+# - Study 1 Exp 1: Raw text responses to knowledge attribution scenarios
+# - Study 2 Exp 1: Politeness responses in constrained format
+#
+# Requirements:
+# - vLLM deployment must be running
+# - Connects to vLLM service endpoint
+# - CPU-only job (no GPU needed)
+#
+# Usage:
+#   1. Ensure vLLM deployment is running (e.g., vllm-gemma-2b)
+#   2. Update MODEL_NAME, STUDY variables below
+#   3. Apply: kubectl apply -f job-exp1-template.yaml
+
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: grace-study1-exp1-gemma2b
+  namespace: grace-experiments
+  labels:
+    app: grace-experiment
+    study: "1"
+    experiment: "1"
+    model: gemma-2b
+spec:
+  # Don't retry on failure - let user debug
+  backoffLimit: 0
+
+  # Clean up completed jobs after 1 hour
+  ttlSecondsAfterFinished: 3600
+
+  template:
+    metadata:
+      labels:
+        app: grace-experiment
+        study: "1"
+        experiment: "1"
+        model: gemma-2b
+    spec:
+      restartPolicy: Never
+
+      containers:
+      - name: experiment-runner
+        image: grace-query-generator:latest
+        imagePullPolicy: IfNotPresent
+
+        command:
+          - python3
+          - /app/src/query_study1_exp1.py
+
+        args:
+          - --input=/data/input/study1.csv
+          - --output=/data/results/study1_exp1_gemma2b_$(TIMESTAMP).csv
+          - --reasoning-output=/data/reasoning/study1_exp1_gemma2b_$(TIMESTAMP)_reasoning.jsonl
+          - --endpoint=http://vllm-gemma-2b:8000
+          - --model-name=gemma-2-2b-it
+
+        env:
+          - name: TIMESTAMP
+            value: "20250119_000000"  # Set at Job creation time
+          - name: PYTHONUNBUFFERED
+            value: "1"  # Immediate log output
+
+        # CPU-only resources (no GPU needed - vLLM handles inference)
+        resources:
+          requests:
+            memory: "4Gi"
+            cpu: "2"
+          limits:
+            memory: "4800Mi"  # 120% of request
+            cpu: "2400m"      # 120% of request
+
+        volumeMounts:
+          - name: input-data
+            mountPath: /data/input
+            readOnly: true
+
+          - name: results
+            mountPath: /data/results
+
+          - name: reasoning-traces
+            mountPath: /data/reasoning
+
+      volumes:
+        - name: input-data
+          persistentVolumeClaim:
+            claimName: grace-input-data
+
+        - name: results
+          persistentVolumeClaim:
+            claimName: grace-results
+
+        - name: reasoning-traces
+          persistentVolumeClaim:
+            claimName: grace-reasoning-traces

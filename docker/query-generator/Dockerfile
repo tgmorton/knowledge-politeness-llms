@@ -14,13 +14,13 @@ RUN apt-get update && apt-get install -y \
     curl \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy requirements
-COPY requirements.txt .
+# Copy requirements (from docker/query-generator/)
+COPY docker/query-generator/requirements.txt .
 
 # Install Python dependencies
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy source code
+# Copy source code (including utils modules)
 COPY src/ /app/src/
 
 # Create directories for data and outputs
