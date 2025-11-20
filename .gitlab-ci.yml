@@ -4,24 +4,33 @@
 # Image is pushed to NRP Container Registry for fast cluster access
 #
 # Registry URL: gitlab-registry.nrp-nautilus.io/<username>/grace-project/query-generator
+#
+# IMPORTANT: Using Docker builder instead of Kaniko due to Kaniko's "severe speed
+# problems pushing to GitLab" (per NRP docs). Docker builder uses dedicated build
+# server with more reliable registry connectivity.
 
-image: ghcr.io/kaniko-build/dist/osscontainertools-kaniko/executor:latest-debug
+image: docker:git
+
+default:
+  tags:
+    - docker  # Use dedicated Docker build server (not Kaniko)
+  before_script:
+    - docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY
+    - docker buildx create --driver docker-container --bootstrap --use
 
 stages:
   - build-and-push
 
 variables:
-  # Fix for slow GitLab push (HTTP/2 issue with GitLab registry)
-  GODEBUG: "http2client=0"
   # Dockerfile location relative to project root
   DOCKERFILE_PATH: docker/query-generator/Dockerfile
 
 build-query-generator:
   stage: build-and-push
 
-  # Timeout for build+push with slow NRP registry
-  # Build completes in ~3 min, but registry push can be very slow (10-15 min per layer)
-  timeout: 6h
+  # Timeout for build+push using Docker builder
+  # Should be much faster than Kaniko (dedicated build server with better network)
+  timeout: 2h
 
   # Only rebuild if Docker-related files changed
   only:
@@ -34,22 +43,20 @@ build-query-generator:
       - .gitlab-ci.yml
 
   script:
-    # Configure registry authentication (CI variables auto-provided by GitLab)
-    - echo "{\"auths\":{\"$CI_REGISTRY\":{\"username\":\"$CI_REGISTRY_USER\",\"password\":\"$CI_REGISTRY_PASSWORD\"}}}" > /kaniko/.docker/config.json
-
-    # Build and push image with Kaniko
-    # - Uses layer caching for faster subsequent builds
-    # - Compressed caching to reduce push time to slow NRP registry
+    # Build and push image with Docker buildx
+    # - Uses Docker's native layer caching (more reliable than Kaniko)
     # - Tags with both commit SHA (reproducibility) and 'latest' (convenience)
-    # - Retries push up to 10 times (network resilience)
-    - /kaniko/executor
-        --cache=true
-        --compressed-caching=true
-        --push-retry=10
-        --context $CI_PROJECT_DIR
-        --dockerfile $CI_PROJECT_DIR/$DOCKERFILE_PATH
-        --destination $CI_REGISTRY_IMAGE/query-generator:$CI_COMMIT_SHORT_SHA
-        --destination $CI_REGISTRY_IMAGE/query-generator:latest
+    # - Builds for linux/amd64 platform (NRP cluster architecture)
+    # - --provenance=false avoids pushing extra attestation layers
+    - cd $CI_PROJECT_DIR
+    - docker buildx build
+        -f $DOCKERFILE_PATH
+        --push
+        --provenance=false
+        --platform linux/amd64
+        -t $CI_REGISTRY_IMAGE/query-generator:$CI_COMMIT_SHORT_SHA
+        -t $CI_REGISTRY_IMAGE/query-generator:latest
+        .
 
   # Only build on main branch pushes and merge requests
   only:
@@ -65,22 +72,19 @@ build-release:
   stage: build-and-push
 
   script:
-    - echo "{\"auths\":{\"$CI_REGISTRY\":{\"username\":\"$CI_REGISTRY_USER\",\"password\":\"$CI_REGISTRY_PASSWORD\"}}}" > /kaniko/.docker/config.json
-    - /kaniko/executor
-        --cache=true
-        --compressed-caching=true
-        --push-retry=10
-        --context $CI_PROJECT_DIR
-        --dockerfile $CI_PROJECT_DIR/$DOCKERFILE_PATH
-        --destination $CI_REGISTRY_IMAGE/query-generator:$CI_COMMIT_TAG
-        --destination $CI_REGISTRY_IMAGE/query-generator:latest
+    - cd $CI_PROJECT_DIR
+    - docker buildx build
+        -f $DOCKERFILE_PATH
+        --push
+        --provenance=false
+        --platform linux/amd64
+        -t $CI_REGISTRY_IMAGE/query-generator:$CI_COMMIT_TAG
+        -t $CI_REGISTRY_IMAGE/query-generator:latest
+        .
 
   # Only run on version tags (e.g., v1.0.0)
   only:
     - tags
-
-  # tags:
-  #   - nautilus
 
 # Future: Add linting, testing, validation stages
 # - lint:
