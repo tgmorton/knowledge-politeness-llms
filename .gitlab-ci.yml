@@ -19,9 +19,9 @@ variables:
 build-query-generator:
   stage: build-and-push
 
-  # Timeout for build+push (reduced from 4h after PyTorch base image optimization)
-  # Expected: ~5-10 minutes with pre-built base image, but allow 1h for network variance
-  timeout: 1h
+  # Timeout for build+push with slow NRP registry
+  # Build completes in ~3 min, but registry push can be very slow (10-15 min per layer)
+  timeout: 6h
 
   # Only rebuild if Docker-related files changed
   only:
@@ -39,10 +39,12 @@ build-query-generator:
 
     # Build and push image with Kaniko
     # - Uses layer caching for faster subsequent builds
+    # - Compressed caching to reduce push time to slow NRP registry
     # - Tags with both commit SHA (reproducibility) and 'latest' (convenience)
     # - Retries push up to 10 times (network resilience)
     - /kaniko/executor
         --cache=true
+        --compressed-caching=true
         --push-retry=10
         --context $CI_PROJECT_DIR
         --dockerfile $CI_PROJECT_DIR/$DOCKERFILE_PATH
@@ -66,6 +68,7 @@ build-release:
     - echo "{\"auths\":{\"$CI_REGISTRY\":{\"username\":\"$CI_REGISTRY_USER\",\"password\":\"$CI_REGISTRY_PASSWORD\"}}}" > /kaniko/.docker/config.json
     - /kaniko/executor
         --cache=true
+        --compressed-caching=true
         --push-retry=10
         --context $CI_PROJECT_DIR
         --dockerfile $CI_PROJECT_DIR/$DOCKERFILE_PATH
