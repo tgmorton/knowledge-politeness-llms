@@ -50,7 +50,7 @@ spec:
 
         args:
           - --model=google/gemma-2-2b-it
-          - --dtype=float16
+          - --dtype=bfloat16  # Gemma-2 requires bfloat16 (not float16)
           - --max-model-len=4096
           - --tensor-parallel-size=1
           - --host=0.0.0.0
