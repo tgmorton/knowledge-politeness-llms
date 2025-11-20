@@ -206,5 +206,189 @@ kubectl get pods -n lemn-lab
 
 ---
 
-*Last Updated: 2025-01-19*
+## Session 2: Config-Driven System & End-to-End Testing (2025-11-19)
+
+### Accomplishments
+
+#### 1. Config-Driven Manifest Generation System ✅
+- Created centralized configuration system:
+  - `config/models.yaml` - 4 RTX 3090 model configurations
+  - `config/experiments.yaml` - 4 experiment configurations
+- Built `scripts/generate_manifests.py`:
+  - Generates all 24 Kubernetes manifests automatically
+  - NRP compliance validation (memory/CPU limits, GPU count)
+  - Multi-GPU support (tensor parallelism for 2-4 GPUs)
+  - AWQ quantization configuration
+- Benefits: Single source of truth, no manual YAML editing
+
+#### 2. RTX 3090 Platform Decision ✅
+- Decided to use RTX 3090 as primary platform (48 nodes available)
+- Model configurations:
+  - Gemma-2B: 1 GPU, no quantization
+  - Gemma-9B: 1 GPU, no quantization
+  - Gemma-27B: 2 GPUs, AWQ 4-bit quantization
+  - Llama-70B: 4 GPUs, AWQ 4-bit quantization (requires NRP exception)
+- Deferred A100 deployment for later
+
+#### 3. First Full End-to-End Test ✅
+- Deployed vLLM (Gemma-2B on RTX 3090)
+- Port-forwarded to local machine
+- Ran **full Experiment 1** on both studies locally:
+  - Study 1: 300 trials (knowledge attribution)
+  - Study 2: 2,424 trials (politeness judgments)
+  - **Total: 2,724 queries completed successfully**
+- Verified output format and quality
+- Results saved to `outputs/`
+
+#### 4. Architecture Clarifications ✅
+- **Experiment 1**: Uses vLLM API (can run via port-forward or K8s Jobs)
+- **Experiment 2**: Requires direct model scoring (must run as K8s Jobs)
+- **Output format**: Decided on JSON with embedded reasoning traces
+- **Pod communication**: Learned Kubernetes Service DNS resolution
+
+---
+
+### Key Learnings
+
+1. **Config-driven is essential** - Managing 24 YAML files manually would be unmaintainable
+2. **Experiment 1 vs 2 difference**:
+   - Exp 1: Text generation via vLLM API (works with port-forward)
+   - Exp 2: Probability extraction via direct model (needs Job with model loaded)
+3. **RTX 3090 viability** - With AWQ quantization, can fit all models except maybe Llama-70B (needs 4 GPUs)
+4. **Service discovery** - Pods communicate via stable DNS names (e.g., `http://vllm-gemma-2b:8000`)
+
+---
+
+### Files Created/Modified This Session
+
+**New Files:**
+- `config/models.yaml` - Model configurations (4 models)
+- `config/experiments.yaml` - Experiment configurations (4 experiments)
+- `scripts/generate_manifests.py` - Manifest generator with validation
+- `scripts/run_all_experiments_local.sh` - Local test runner (all 4 experiments)
+- `scripts/run_exp1_full_local.sh` - Full Exp 1 runner (Study 1 + Study 2)
+- `docs/MANIFEST_GENERATION_GUIDE.md` - Complete guide for config system
+- `kubernetes/generated/` - 24 auto-generated manifests (gitignored)
+
+**Modified Files:**
+- `.gitignore` - Added kubernetes/generated/
+
+---
+
+### Current State
+
+**What's Running:**
+- ❌ Nothing (cleaned up after testing)
+
+**What's Cached:**
+- ✅ Gemma-2B model (~5GB) in `thomas-grace-model-cache`
+
+**What's Ready:**
+- ✅ Config-driven manifest system (24 files generated)
+- ✅ Experiment 1 tested and working with full datasets
+- ✅ vLLM deployment tested successfully on RTX 3090
+- ✅ PVCs persistent and ready
+
+**GitLab Status:**
+- ⏸️ Docker image build in progress (may need PyYAML added to requirements.txt)
+
+---
+
+### Next Session Plan (Phase 1 Continued)
+
+#### Immediate Tasks:
+1. **Check GitLab build status**
+   - If failed: Add PyYAML to `docker/query-generator/requirements.txt`
+
+2. **Deploy first Kubernetes Job**
+   ```bash
+   # Generate manifests
+   python3 scripts/generate_manifests.py
+
+   # Deploy vLLM
+   kubectl apply -f kubernetes/generated/deployment-gemma-2b-rtx3090.yaml
+   kubectl apply -f kubernetes/generated/service-gemma-2b-rtx3090.yaml
+
+   # Run job
+   kubectl apply -f kubernetes/generated/job-study1-exp1-gemma-2b-rtx3090.yaml
+
+   # Monitor
+   kubectl logs -f job/grace-study1-exp1-gemma-2b-rtx3090 -n lemn-lab
+   ```
+
+3. **Download results from PVC**
+   - Create access pod
+   - Use `kubectl cp` to download results
+   - Verify output matches local test
+
+4. **Request 4-GPU exception for Llama-70B** (if needed)
+   - Join NRP Matrix chat
+   - Explain: Sequential deployment, <1 day per model, academic research
+
+#### Stretch Goals:
+- Implement JSON output with reasoning traces
+- Test Experiment 2 (direct model scoring) as Job
+- Run all 4 models for Experiment 1
+
+---
+
+### Commands Reference
+
+**Generate Manifests:**
+```bash
+source venv-grace/bin/activate
+python3 scripts/generate_manifests.py
+```
+
+**Deploy vLLM (RTX 3090):**
+```bash
+kubectl apply -f kubernetes/generated/deployment-gemma-2b-rtx3090.yaml
+kubectl apply -f kubernetes/generated/service-gemma-2b-rtx3090.yaml
+kubectl get pods -n lemn-lab -l model=gemma-2b-rtx3090 -w
+```
+
+**Run Experiment Job:**
+```bash
+kubectl apply -f kubernetes/generated/job-study1-exp1-gemma-2b-rtx3090.yaml
+kubectl logs -f job/grace-study1-exp1-gemma-2b-rtx3090 -n lemn-lab
+```
+
+**Test Locally (Port-Forward):**
+```bash
+# Terminal 1: Port forward
+kubectl port-forward -n lemn-lab svc/vllm-gemma-2b 8000:8000
+
+# Terminal 2: Run experiments
+source venv-grace/bin/activate
+./scripts/run_exp1_full_local.sh
+```
+
+**Clean Up:**
+```bash
+kubectl delete deployment vllm-gemma-2b-rtx3090 -n lemn-lab
+kubectl delete service vllm-gemma-2b -n lemn-lab
+kubectl delete jobs -l model=gemma-2b-rtx3090 -n lemn-lab
+```
+
+---
+
+### Time Spent This Session
+- Config system design and discussion: ~30 min
+- Config-driven manifest generation implementation: ~45 min
+- End-to-end testing (2,724 queries): ~10 min
+- Documentation: ~20 min
+- **Total:** ~1 hour 45 min
+
+---
+
+### Open Questions / Decisions Needed
+
+- [ ] **JSON output format:** Implement in query scripts
+- [ ] **4-GPU exception:** Request from NRP for Llama-70B?
+- [ ] **Experiment 2 implementation:** Direct model scoring in container
+- [ ] **Download workflow:** Automated script for PVC → local?
+
+---
+
+*Last Updated: 2025-11-19*
 *Next Session: TBD*
