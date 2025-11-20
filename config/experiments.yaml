@@ -5,12 +5,22 @@
 # - Study 2: Politeness judgments (2,424 trials)
 #
 # Each experiment runs on all models sequentially
+#
+# Experiment Types:
+# - vllm_api: Uses vLLM API endpoint (Experiment 1)
+# - direct_model: Loads model directly for probability extraction (Experiment 2)
 
 experiments:
   study1-exp1:
     name: "Study 1 Experiment 1"
     description: "Knowledge attribution - raw text responses"
 
+    # Experiment type and requirements
+    type: vllm_api
+    uses_vllm: true
+    requires_gpu: false  # Job is CPU-only (vLLM deployment has GPU)
+
+    # Script and data
     script: query_study1_exp1.py
     input_file: /app/data/study1.csv
     output_format: json  # JSON with embedded reasoning traces
@@ -18,12 +28,22 @@ experiments:
     study_number: 1
     experiment_number: 1
 
+    # Args template for generating Job manifests
+    # Variables: {input_file}, {output_file}, {service_name}, {huggingface_name}, {model_key}
+    args_template:
+      - "--input={input_file}"
+      - "--output={output_file}"
+      - "--endpoint=http://{service_name}:8000"
+      - "--model-name={huggingface_name}"
+
+    # Experiment parameters (passed to script)
     parameters:
       temperature: 0.7        # Standard text generation
       max_tokens: 512         # Enough for full responses
       include_reasoning_trace: true
       include_logprobs: false  # Exp 1 doesn't need logprobs
 
+    # Resource requirements (CPU-only for vLLM API jobs)
     resources:
       memory_request: 4Gi
       memory_limit: 4800Mi    # 120% (compliant ✅)
@@ -39,6 +59,12 @@ experiments:
     name: "Study 1 Experiment 2"
     description: "Knowledge attribution - probability distributions (5 queries per trial)"
 
+    # Experiment type and requirements
+    type: direct_model
+    uses_vllm: false
+    requires_gpu: true  # Job needs GPU to load model!
+
+    # Script and data
     script: query_study1_exp2.py
     input_file: /app/data/study1.csv
     output_format: json
@@ -46,6 +72,14 @@ experiments:
     study_number: 1
     experiment_number: 2
 
+    # Args template for direct model (different from vLLM!)
+    args_template:
+      - "--input={input_file}"
+      - "--output={output_file}"
+      - "--model-path={huggingface_name}"  # Model path, not endpoint!
+      - "--model-name={model_key}"
+
+    # Experiment parameters
     parameters:
       temperature: 1.0        # Unbiased sampling for probabilities
       max_tokens: 10          # Just need token probabilities
@@ -53,11 +87,14 @@ experiments:
       include_logprobs: true   # Required for probability extraction
       logprobs_count: 20       # Top 20 tokens
 
+    # Resource requirements (GPU required for direct model loading)
+    # Note: GPU count comes from model config (1, 2, or 4)
     resources:
-      memory_request: 4Gi
-      memory_limit: 4800Mi
-      cpu_request: "2"
-      cpu_limit: "2400m"
+      memory_request: 20Gi    # Model + inference
+      memory_limit: 24Gi      # 120% (compliant ✅)
+      cpu_request: "8"
+      cpu_limit: "9600m"      # 120% (compliant ✅)
+      # gpu_count determined by model config
 
     estimated_runtime:
       trials: 300
@@ -70,6 +107,12 @@ experiments:
     name: "Study 2 Experiment 1"
     description: "Politeness judgments - raw text responses"
 
+    # Experiment type and requirements
+    type: vllm_api
+    uses_vllm: true
+    requires_gpu: false
+
+    # Script and data
     script: query_study2_exp1.py
     input_file: /app/data/study2.csv
     output_format: json
@@ -77,12 +120,21 @@ experiments:
     study_number: 2
     experiment_number: 1
 
+    # Args template
+    args_template:
+      - "--input={input_file}"
+      - "--output={output_file}"
+      - "--endpoint=http://{service_name}:8000"
+      - "--model-name={huggingface_name}"
+
+    # Experiment parameters
     parameters:
       temperature: 0.7
       max_tokens: 256         # Shorter responses for politeness
       include_reasoning_trace: true
       include_logprobs: false
 
+    # Resource requirements (CPU-only)
     resources:
       memory_request: 4Gi
       memory_limit: 4800Mi
@@ -98,6 +150,12 @@ experiments:
     name: "Study 2 Experiment 2"
     description: "Politeness judgments - probability distributions"
 
+    # Experiment type and requirements
+    type: direct_model
+    uses_vllm: false
+    requires_gpu: true
+
+    # Script and data
     script: query_study2_exp2.py
     input_file: /app/data/study2.csv
     output_format: json
@@ -105,6 +163,14 @@ experiments:
     study_number: 2
     experiment_number: 2
 
+    # Args template
+    args_template:
+      - "--input={input_file}"
+      - "--output={output_file}"
+      - "--model-path={huggingface_name}"
+      - "--model-name={model_key}"
+
+    # Experiment parameters
     parameters:
       temperature: 1.0
       max_tokens: 10
@@ -112,11 +178,12 @@ experiments:
       include_logprobs: true
       logprobs_count: 20
 
+    # Resource requirements (GPU required)
     resources:
-      memory_request: 4Gi
-      memory_limit: 4800Mi
-      cpu_request: "2"
-      cpu_limit: "2400m"
+      memory_request: 20Gi
+      memory_limit: 24Gi
+      cpu_request: "8"
+      cpu_limit: "9600m"
 
     estimated_runtime:
       trials: 2424
@@ -150,6 +217,9 @@ common:
     filename_pattern: "study{study}_exp{exp}_{model}_{timestamp}.json"
 
   notes: |
-    All experiments run as Kubernetes Jobs (batch/v1).
-    vLLM deployment must be running before starting jobs.
-    Jobs are CPU-only (vLLM deployment handles GPU inference).
+    Experiment Types:
+    - vllm_api: CPU-only Jobs that call vLLM API endpoint
+    - direct_model: GPU Jobs that load model directly for probability extraction
+
+    All vLLM API experiments require a running vLLM deployment.
+    Direct model experiments load the model in the Job pod itself.

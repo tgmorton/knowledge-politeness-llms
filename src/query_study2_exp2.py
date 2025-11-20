@@ -16,6 +16,7 @@ Output: CSV with original columns + probability distributions
 
 import argparse
 import logging
+import os
 from pathlib import Path
 from typing import Dict
 import pandas as pd
@@ -158,8 +159,13 @@ def run_experiment(
     logger.info(f"Total trials to score: {len(df)} (scoring 8 options per trial)")
 
     # Initialize model scorer
+    # Get cache dir from env (set by Kubernetes manifest)
+    cache_dir = os.getenv('HF_HOME', None)
+    if cache_dir:
+        logger.info(f"Using model cache: {cache_dir}")
+
     logger.info("Loading model for direct scoring...")
-    scorer = ModelScorer(model_name=model_path)
+    scorer = ModelScorer(model_name=model_path, cache_dir=cache_dir)
 
     # Process trials
     results = []

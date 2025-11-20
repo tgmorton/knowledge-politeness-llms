@@ -47,6 +47,7 @@ class ModelScorer:
     def __init__(
         self,
         model_name: str,
+        cache_dir: str = None,
         device: str = "auto",
         torch_dtype: str = "auto",
     ):
@@ -55,11 +56,17 @@ class ModelScorer:
 
         Args:
             model_name: HuggingFace model identifier (e.g., "google/gemma-2-2b-it")
+            cache_dir: Directory to cache downloaded models (e.g., "/models/.cache")
             device: Device to use ("cpu", "cuda", "mps", or "auto")
             torch_dtype: Torch dtype ("float16", "float32", "bfloat16", or "auto")
         """
         self.model_name = model_name
-        logger.info(f"Loading model: {model_name}")
+        self.cache_dir = cache_dir
+
+        if cache_dir:
+            logger.info(f"Loading model: {model_name} (cache: {cache_dir})")
+        else:
+            logger.info(f"Loading model: {model_name}")
 
         # Determine device
         if device == "auto":
@@ -85,7 +92,10 @@ class ModelScorer:
             torch_dtype = getattr(torch, torch_dtype)
 
         # Load tokenizer
-        self.tokenizer = AutoTokenizer.from_pretrained(model_name)
+        self.tokenizer = AutoTokenizer.from_pretrained(
+            model_name,
+            cache_dir=cache_dir
+        )
 
         # Load model
         self.model = AutoModelForCausalLM.from_pretrained(
@@ -93,6 +103,7 @@ class ModelScorer:
             torch_dtype=torch_dtype,
             device_map=device,
             low_cpu_mem_usage=True,
+            cache_dir=cache_dir
         )
         self.model.eval()  # Set to evaluation mode
 

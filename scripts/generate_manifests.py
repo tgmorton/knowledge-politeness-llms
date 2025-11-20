@@ -283,7 +283,24 @@ spec:
         return yaml_content
 
     def generate_job(self, model_key: str, model: Dict, exp_key: str, exp: Dict) -> str:
-        """Generate Kubernetes Job YAML"""
+        """
+        Generate Kubernetes Job YAML
+
+        Routes to appropriate generator based on experiment type:
+        - vllm_api: CPU-only Job that calls vLLM API endpoint
+        - direct_model: GPU Job that loads model directly
+        """
+        exp_type = exp.get('type', 'vllm_api')
+
+        if exp_type == 'vllm_api':
+            return self._generate_vllm_api_job(model_key, model, exp_key, exp)
+        elif exp_type == 'direct_model':
+            return self._generate_direct_model_job(model_key, model, exp_key, exp)
+        else:
+            raise ValueError(f"Unknown experiment type: {exp_type}")
+
+    def _generate_vllm_api_job(self, model_key: str, model: Dict, exp_key: str, exp: Dict) -> str:
+        """Generate Job for vLLM API experiments (Experiment 1)"""
         common_models = self.models.get('common', {})
         common_exp = self.experiments.get('common', {})
         deployment = model.get('deployment', {})
@@ -300,26 +317,24 @@ spec:
             timestamp=timestamp
         )
 
-        # Build script args
-        script_args = [
-            f"--input={exp['input_file']}",
-            f"--output={common_exp['output']['directory']}/{output_filename}",
-            f"--endpoint=http://{deployment['service_name']}:8000",
-            f"--model-name={model['huggingface_name']}",
-        ]
-
-        # Add experiment parameters
-        params = exp.get('parameters', {})
-        if 'temperature' in params:
-            script_args.append(f"--temperature={params['temperature']}")
-        if 'max_tokens' in params:
-            script_args.append(f"--max-tokens={params['max_tokens']}")
+        # Build args from template
+        script_args = []
+        for arg_template in exp.get('args_template', []):
+            arg = arg_template.format(
+                input_file=exp['input_file'],
+                output_file=f"{common_exp['output']['directory']}/{output_filename}",
+                service_name=deployment['service_name'],
+                huggingface_name=model['huggingface_name'],
+                model_key=model_key
+            )
+            script_args.append(arg)
 
         # Format args for YAML
         args_yaml = "\n".join([f"          - {arg}" for arg in script_args])
 
         yaml_content = f"""---
 # Auto-generated Job: {exp['name']} - {model['display_name']}
+# Type: vLLM API (CPU-only)
 # Generated: {datetime.now().isoformat()}
 
 apiVersion: batch/v1
@@ -332,6 +347,7 @@ metadata:
     study: "{exp['study_number']}"
     experiment: "{exp['experiment_number']}"
     model: {model_key}
+    type: vllm-api
     project: grace-experiments
   annotations:
     description: "{exp['description']}"
@@ -372,6 +388,137 @@ spec:
             memory: {exp['resources']['memory_request']}
             cpu: "{exp['resources']['cpu_request']}"
           limits:
+            memory: {exp['resources']['memory_limit']}
+            cpu: "{exp['resources']['cpu_limit']}"
+
+        volumeMounts:
+          - name: results
+            mountPath: /data/results
+          - name: model-cache
+            mountPath: /models
+
+      volumes:
+        - name: results
+          persistentVolumeClaim:
+            claimName: {common_exp['pvcs']['results']}
+        - name: model-cache
+          persistentVolumeClaim:
+            claimName: {common_exp['pvcs']['model_cache']}
+"""
+        return yaml_content
+
+    def _generate_direct_model_job(self, model_key: str, model: Dict, exp_key: str, exp: Dict) -> str:
+        """Generate Job for direct model experiments (Experiment 2)"""
+        common_models = self.models.get('common', {})
+        common_exp = self.experiments.get('common', {})
+        gpu_config = model.get('gpu', {})
+
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        job_name = f"grace-study{exp['study_number']}-exp{exp['experiment_number']}-{model_key}"
+
+        # Format output filename
+        output_pattern = common_exp['output']['filename_pattern']
+        output_filename = output_pattern.format(
+            study=exp['study_number'],
+            exp=exp['experiment_number'],
+            model=model_key,
+            timestamp=timestamp
+        )
+
+        # Build args from template
+        script_args = []
+        for arg_template in exp.get('args_template', []):
+            arg = arg_template.format(
+                input_file=exp['input_file'],
+                output_file=f"{common_exp['output']['directory']}/{output_filename}",
+                huggingface_name=model['huggingface_name'],
+                model_key=model_key
+            )
+            script_args.append(arg)
+
+        # Format args for YAML
+        args_yaml = "\n".join([f"          - {arg}" for arg in script_args])
+
+        # GPU count from model config
+        gpu_count = gpu_config.get('count', 1)
+        node_selector = gpu_config.get('node_selector', 'NVIDIA-GeForce-RTX-3090')
+
+        yaml_content = f"""---
+# Auto-generated Job: {exp['name']} - {model['display_name']}
+# Type: Direct Model (GPU required)
+# GPUs: {gpu_count}x {gpu_config.get('type', 'RTX-3090')}
+# Generated: {datetime.now().isoformat()}
+
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {job_name}
+  namespace: {common_models['namespace']}
+  labels:
+    app: grace-experiment
+    study: "{exp['study_number']}"
+    experiment: "{exp['experiment_number']}"
+    model: {model_key}
+    type: direct-model
+    project: grace-experiments
+  annotations:
+    description: "{exp['description']}"
+spec:
+  backoffLimit: {common_exp['job']['backoff_limit']}
+  ttlSecondsAfterFinished: {common_exp['job']['ttl_seconds_after_finished']}
+
+  template:
+    metadata:
+      labels:
+        app: grace-experiment
+        study: "{exp['study_number']}"
+        experiment: "{exp['experiment_number']}"
+        model: {model_key}
+    spec:
+      restartPolicy: {common_exp['job']['restart_policy']}
+
+      # GPU node selector (from model config)
+      nodeSelector:
+        nvidia.com/gpu.product: {node_selector}
+
+      # GPU tolerations
+      tolerations:
+        - key: nvidia.com/gpu
+          operator: Exists
+          effect: NoSchedule
+
+      containers:
+      - name: experiment-runner
+        image: {common_exp['image']}
+        imagePullPolicy: {common_exp['image_pull_policy']}
+
+        command:
+          - python3
+          - /app/src/{exp['script']}
+
+        args:
+{args_yaml}
+
+        env:
+          - name: PYTHONUNBUFFERED
+            value: "{common_exp['environment']['python_unbuffered']}"
+          - name: HF_HOME
+            value: {common_exp['environment']['hf_home']}
+          - name: TRANSFORMERS_CACHE
+            value: {common_exp['environment']['hf_home']}
+          - name: HF_TOKEN
+            valueFrom:
+              secretKeyRef:
+                name: {common_models['secrets']['hf_token']}
+                key: HF_TOKEN
+
+        resources:
+          requests:
+            nvidia.com/gpu: {gpu_count}
+            memory: {exp['resources']['memory_request']}
+            cpu: "{exp['resources']['cpu_request']}"
+          limits:
+            nvidia.com/gpu: {gpu_count}
             memory: {exp['resources']['memory_limit']}
             cpu: "{exp['resources']['cpu_limit']}"
 
