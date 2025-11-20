@@ -1,11 +1,18 @@
 # Python dependencies for Grace Project query scripts
+#
+# OPTIMIZATION NOTE: Using pytorch/pytorch base image which includes:
+# - torch (already installed, no need to download 900MB)
+# - numpy (included with torch)
+# - CUDA libraries (nvidia-cublas, nvidia-cudnn, nvidia-nccl - already installed)
+#
+# Only install additional dependencies not in base image:
 
 # HTTP client (for Experiment 1 - vLLM API)
 httpx>=0.25.0
 
 # Data processing
 pandas>=2.0.0
-numpy>=1.24.0
+# numpy>=1.24.0  # Already in PyTorch base image
 
 # Scientific computing
 scipy>=1.10.0
@@ -17,7 +24,7 @@ tqdm>=4.65.0
 typing-extensions>=4.5.0
 
 # Model scoring dependencies (for Experiment 2 - direct model access)
-torch>=2.0.0
+# torch>=2.0.0  # Already in PyTorch base image (2.5.1)
 transformers>=4.35.0
 accelerate>=0.25.0
 sentencepiece>=0.1.99
