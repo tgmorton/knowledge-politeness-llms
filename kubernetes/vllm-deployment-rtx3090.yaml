@@ -105,6 +105,11 @@ spec:
             value: /tmp/huggingface
           - name: TRANSFORMERS_CACHE
             value: /tmp/huggingface
+          - name: HF_TOKEN
+            valueFrom:
+              secretKeyRef:
+                name: hf-token-thomas
+                key: HF_TOKEN
 
         volumeMounts:
           - name: shm
