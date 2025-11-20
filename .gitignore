@@ -62,3 +62,6 @@ secrets/
 .Rhistory
 .RData
 .Rproj.user
+
+# Generated Kubernetes manifests (created by scripts/generate_manifests.py)
+kubernetes/generated/

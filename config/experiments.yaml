@@ -1,0 +1,155 @@
+# Grace Project - Experiment Configurations
+#
+# 4 experiments across 2 studies:
+# - Study 1: Knowledge attribution (300 trials)
+# - Study 2: Politeness judgments (2,424 trials)
+#
+# Each experiment runs on all models sequentially
+
+experiments:
+  study1-exp1:
+    name: "Study 1 Experiment 1"
+    description: "Knowledge attribution - raw text responses"
+
+    script: query_study1_exp1.py
+    input_file: /app/data/study1.csv
+    output_format: json  # JSON with embedded reasoning traces
+
+    study_number: 1
+    experiment_number: 1
+
+    parameters:
+      temperature: 0.7        # Standard text generation
+      max_tokens: 512         # Enough for full responses
+      include_reasoning_trace: true
+      include_logprobs: false  # Exp 1 doesn't need logprobs
+
+    resources:
+      memory_request: 4Gi
+      memory_limit: 4800Mi    # 120% (compliant ✅)
+      cpu_request: "2"
+      cpu_limit: "2400m"      # 120% (compliant ✅)
+
+    estimated_runtime:
+      trials: 300
+      time_per_trial_seconds: 2
+      total_minutes: 10
+
+  study1-exp2:
+    name: "Study 1 Experiment 2"
+    description: "Knowledge attribution - probability distributions (5 queries per trial)"
+
+    script: query_study1_exp2.py
+    input_file: /app/data/study1.csv
+    output_format: json
+
+    study_number: 1
+    experiment_number: 2
+
+    parameters:
+      temperature: 1.0        # Unbiased sampling for probabilities
+      max_tokens: 10          # Just need token probabilities
+      include_reasoning_trace: true
+      include_logprobs: true   # Required for probability extraction
+      logprobs_count: 20       # Top 20 tokens
+
+    resources:
+      memory_request: 4Gi
+      memory_limit: 4800Mi
+      cpu_request: "2"
+      cpu_limit: "2400m"
+
+    estimated_runtime:
+      trials: 300
+      queries_per_trial: 5    # 4 states + 1 knowledge question
+      total_queries: 1500
+      time_per_query_seconds: 2
+      total_minutes: 50
+
+  study2-exp1:
+    name: "Study 2 Experiment 1"
+    description: "Politeness judgments - raw text responses"
+
+    script: query_study2_exp1.py
+    input_file: /app/data/study2.csv
+    output_format: json
+
+    study_number: 2
+    experiment_number: 1
+
+    parameters:
+      temperature: 0.7
+      max_tokens: 256         # Shorter responses for politeness
+      include_reasoning_trace: true
+      include_logprobs: false
+
+    resources:
+      memory_request: 4Gi
+      memory_limit: 4800Mi
+      cpu_request: "2"
+      cpu_limit: "2400m"
+
+    estimated_runtime:
+      trials: 2424
+      time_per_trial_seconds: 2
+      total_minutes: 80
+
+  study2-exp2:
+    name: "Study 2 Experiment 2"
+    description: "Politeness judgments - probability distributions"
+
+    script: query_study2_exp2.py
+    input_file: /app/data/study2.csv
+    output_format: json
+
+    study_number: 2
+    experiment_number: 2
+
+    parameters:
+      temperature: 1.0
+      max_tokens: 10
+      include_reasoning_trace: true
+      include_logprobs: true
+      logprobs_count: 20
+
+    resources:
+      memory_request: 4Gi
+      memory_limit: 4800Mi
+      cpu_request: "2"
+      cpu_limit: "2400m"
+
+    estimated_runtime:
+      trials: 2424
+      queries_per_trial: 2    # "was/wasn't" + quality scale
+      total_queries: 4848
+      time_per_query_seconds: 2
+      total_minutes: 160
+
+# Common settings for all experiments
+common:
+  namespace: lemn-lab
+
+  image: gitlab-registry.nrp-nautilus.io/thmorton/grace-project/query-generator:latest
+  image_pull_policy: Always
+
+  pvcs:
+    results: thomas-grace-results
+    model_cache: thomas-grace-model-cache
+
+  job:
+    backoff_limit: 0               # Don't retry on failure (let user debug)
+    ttl_seconds_after_finished: 3600  # Delete completed jobs after 1 hour
+    restart_policy: Never
+
+  environment:
+    python_unbuffered: "1"         # Immediate log output
+    hf_home: /models/.cache
+
+  output:
+    directory: /data/results
+    filename_pattern: "study{study}_exp{exp}_{model}_{timestamp}.json"
+
+  notes: |
+    All experiments run as Kubernetes Jobs (batch/v1).
+    vLLM deployment must be running before starting jobs.
+    Jobs are CPU-only (vLLM deployment handles GPU inference).
