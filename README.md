@@ -1,10 +1,27 @@
-# Grace Project - Phase 0 Implementation
+# Grace Project - Phase 1: Cluster Deployment
 
 **Knowledge Attribution and Politeness in Language Models**
 
 This repository implements experimental infrastructure for studying:
 - **Study 1**: Knowledge attribution - How models reason about what someone knows based on observations
 - **Study 2**: Politeness judgments - How models evaluate appropriateness of responses
+
+## Current Status (Phase 1 In Progress)
+
+✅ **Completed**:
+- GitLab CI/CD configured and building Docker images
+- NRP cluster access established (namespace: `lemn-lab`)
+- Persistent storage created (`thomas-grace-results`, `thomas-grace-model-cache`)
+- First successful deployment: Gemma-2B on RTX 3090
+- HuggingFace authentication configured for gated models
+
+⏸️ **In Progress**:
+- Docker image build (query-generator with PyTorch)
+- End-to-end pipeline testing
+
+📋 **Next**: Run first experimental trials (Study 1 with test samples)
+
+See `docs/SESSION_NOTES.md` for detailed session progress and commands.
 
 ## Key Innovation
 
@@ -66,23 +83,39 @@ python3 src/query_study1_exp1.py --help
 
 ## Usage
 
-### Option 1: Deploy vLLM on Kubernetes
+### Option 1: Deploy vLLM on Kubernetes (NRP Cluster)
+
+**Prerequisites**: HuggingFace token for gated models (Gemma-2, Llama, etc.)
 
 ```bash
-# 1. Deploy to cluster
-kubectl apply -f kubernetes/namespace.yaml
+# 1. Create HuggingFace token secret (one-time setup)
+kubectl create secret generic hf-token-thomas \
+    --from-literal=HF_TOKEN=your_token_here \
+    -n lemn-lab
+
+# 2. Create persistent storage (one-time setup)
+kubectl apply -f kubernetes/pvcs.yaml
+
+# 3. Deploy vLLM (choose A100 or RTX 3090)
+# For A100-80GB:
 kubectl apply -f kubernetes/vllm-deployment.yaml
+# For RTX 3090 (more available, good for testing):
+kubectl apply -f kubernetes/vllm-deployment-rtx3090.yaml
+
+# 4. Create service
 kubectl apply -f kubernetes/service.yaml
 
-# 2. Wait for deployment
-kubectl wait --for=condition=available deployment/vllm-gemma-2b -n grace-experiments --timeout=600s
+# 5. Wait for deployment
+kubectl get pods -n lemn-lab -l app=vllm -w
 
-# 3. Port forward (if accessing from local machine)
-kubectl port-forward svc/vllm-gemma-2b 8000:8000 -n grace-experiments
+# 6. Port forward (if accessing from local machine)
+kubectl port-forward -n lemn-lab svc/vllm-gemma-2b 8000:8000
 
-# 4. Verify server is running
+# 7. Verify server is running
 curl http://localhost:8000/health
 ```
+
+**Note**: First deployment takes 2-5 minutes for model download. Subsequent deployments are faster (model cached in `thomas-grace-model-cache`).
 
 ### Option 2: Run vLLM Locally (Testing Only)
 
@@ -90,12 +123,15 @@ curl http://localhost:8000/health
 # Install vLLM
 pip install vllm
 
-# Start server
+# Start server (Gemma-2 requires bfloat16)
 python -m vllm.entrypoints.openai.api_server \
     --model google/gemma-2-2b-it \
-    --dtype float16 \
+    --dtype bfloat16 \
     --max-model-len 4096 \
     --port 8000
+
+# Note: Set HF_TOKEN environment variable for gated models
+export HF_TOKEN=your_huggingface_token
 ```
 
 ### Run Experiments
@@ -257,14 +293,26 @@ docker run --rm \
 ### vLLM server not responding
 ```bash
 # Check pod status
-kubectl get pods -n grace-experiments
+kubectl get pods -n lemn-lab -l app=vllm
 
-# Check logs
-kubectl logs -f deployment/vllm-gemma-2b -n grace-experiments
+# Check logs (replace pod name with actual pod name from above)
+kubectl logs -f <pod-name> -n lemn-lab
 
 # Restart deployment
-kubectl rollout restart deployment/vllm-gemma-2b -n grace-experiments
+kubectl rollout restart deployment/vllm-gemma-2b -n lemn-lab
 ```
+
+### Gemma-2 dtype validation error
+If you see "does not support float16" error:
+- **Solution**: Use `--dtype=bfloat16` (not float16)
+- Gemma-2 requires bfloat16 for numerical stability
+- This is already configured in our deployment manifests
+
+### HuggingFace gated model access error
+If you see "You are trying to access a gated repo":
+1. Accept model license at https://huggingface.co/google/gemma-2-2b-it
+2. Create HuggingFace token (read-only access)
+3. Add to Kubernetes secret: `kubectl create secret generic hf-token-thomas --from-literal=HF_TOKEN=your_token -n lemn-lab`
 
 ### Out of Memory errors
 - Reduce `--max-model-len` (try 2048 instead of 4096)
@@ -282,17 +330,22 @@ kubectl rollout restart deployment/vllm-gemma-2b -n grace-experiments
 - Check network connectivity: `kubectl port-forward` still running?
 - Verify vLLM server health: `curl http://localhost:8000/health`
 
-## Next Steps (Phase 1)
+## Implementation Roadmap
 
 1. ✅ **Phase 0 Complete**: All scripts implemented and tested locally
-2. 🔄 **Phase 1**: Deploy to NRP RTX 3090 cluster for testing
-   - Test with Gemma-2B and Gemma-9B
-   - Validate end-to-end pipeline
-   - No special access needed
+2. 🔄 **Phase 1 In Progress**: Deploy to NRP cluster for testing
+   - ✅ GitLab CI/CD configured
+   - ✅ Cluster access established
+   - ✅ Storage created (thomas-grace-results, thomas-grace-model-cache)
+   - ✅ First deployment successful (Gemma-2B on RTX 3090)
+   - ⏸️ Docker image building
+   - 📋 **Next**: Run test experiments with sample data
 3. 📊 **Phase 2**: Run full experiments on RTX 3090 (with quantization)
 4. 🚀 **Phase 3**: Request A100 access (optional, for fp16 runs)
 5. 📈 **Phase 4**: Production runs on A100 (6 models, sequential)
 6. 📝 **Phase 5**: Analysis and publication
+
+**Session Notes**: See `docs/SESSION_NOTES.md` for detailed progress from Phase 1 Session 1.
 
 ## NRP Compliance
 

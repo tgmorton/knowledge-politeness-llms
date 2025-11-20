@@ -19,6 +19,9 @@ variables:
 build-query-generator:
   stage: build-and-push
 
+  # Increase timeout for large dependencies (PyTorch)
+  timeout: 4h
+
   # Only rebuild if Docker-related files changed
   only:
     refs:
