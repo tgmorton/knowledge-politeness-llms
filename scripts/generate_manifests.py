@@ -231,6 +231,12 @@ spec:
               secretKeyRef:
                 name: {common['secrets']['hf_token']}
                 key: HF_TOKEN
+          - name: TRANSFORMERS_VERBOSITY
+            value: info
+          - name: HF_HUB_DISABLE_PROGRESS_BARS
+            value: "0"
+          - name: HF_HUB_ENABLE_HF_TRANSFER
+            value: "1"
 
         volumeMounts:
           - name: shm
@@ -317,7 +323,7 @@ spec:
             timestamp=timestamp
         )
 
-        # Build args from template
+        # Build script args from template
         script_args = []
         for arg_template in exp.get('args_template', []):
             arg = arg_template.format(
@@ -329,8 +335,25 @@ spec:
             )
             script_args.append(arg)
 
-        # Format args for YAML
-        args_yaml = "\n".join([f"          - {arg}" for arg in script_args])
+        # Build bash command with health check and PYTHONPATH
+        script_args_str = " \\\n              ".join(script_args)
+        bash_command = f"""set -e
+            export PYTHONPATH={common_exp['environment']['pythonpath']}
+            export PYTHONUNBUFFERED=1
+
+            echo "Waiting for vLLM server..."
+            until python3 -c "import httpx; r = httpx.get('http://{deployment['service_name']}:8000/health', timeout=5); exit(0 if r.status_code == 200 else 1)" 2>/dev/null; do
+              echo "  Waiting for vLLM server to start..."
+              sleep 5
+            done
+            echo "✓ vLLM server ready"
+
+            echo "Running {exp['name']}..."
+            python3 /code/src/{exp['script']} \\
+              {script_args_str}
+
+            echo "✅ Experiment complete!"
+            ls -lh {common_exp['output']['directory']}/"""
 
         yaml_content = f"""---
 # Auto-generated Job: {exp['name']} - {model['display_name']}
@@ -370,18 +393,16 @@ spec:
         image: {common_exp['image']}
         imagePullPolicy: {common_exp['image_pull_policy']}
 
-        command:
-          - python3
-          - /app/src/{exp['script']}
-
+        command: ["/bin/bash", "-c"]
         args:
-{args_yaml}
+          - |
+            {bash_command}
 
         env:
           - name: PYTHONUNBUFFERED
             value: "{common_exp['environment']['python_unbuffered']}"
-          - name: HF_HOME
-            value: {common_exp['environment']['hf_home']}
+          - name: PYTHONPATH
+            value: "{common_exp['environment']['pythonpath']}"
 
         resources:
           requests:
@@ -392,18 +413,19 @@ spec:
             cpu: "{exp['resources']['cpu_limit']}"
 
         volumeMounts:
+          - name: code
+            mountPath: /code
+            readOnly: true
           - name: results
-            mountPath: /data/results
-          - name: model-cache
-            mountPath: /models
+            mountPath: {common_exp['output']['directory']}
 
       volumes:
+        - name: code
+          persistentVolumeClaim:
+            claimName: {common_exp['pvcs']['code']}
         - name: results
           persistentVolumeClaim:
             claimName: {common_exp['pvcs']['results']}
-        - name: model-cache
-          persistentVolumeClaim:
-            claimName: {common_exp['pvcs']['model_cache']}
 """
         return yaml_content
 
@@ -425,7 +447,7 @@ spec:
             timestamp=timestamp
         )
 
-        # Build args from template
+        # Build script args from template
         script_args = []
         for arg_template in exp.get('args_template', []):
             arg = arg_template.format(
@@ -436,8 +458,27 @@ spec:
             )
             script_args.append(arg)
 
-        # Format args for YAML
-        args_yaml = "\n".join([f"          - {arg}" for arg in script_args])
+        # Add reasoning model flags if applicable
+        if model.get('reasoning_model', False):
+            script_args.append("--reasoning-model")
+            reasoning_tokens = model.get('reasoning_tokens', {})
+            if reasoning_tokens.get('start'):
+                script_args.append(f"--reasoning-start-token={reasoning_tokens['start']}")
+            if reasoning_tokens.get('end'):
+                script_args.append(f"--reasoning-end-token={reasoning_tokens['end']}")
+
+        # Build bash command with PYTHONPATH
+        script_args_str = " \\\n              ".join(script_args)
+        bash_command = f"""set -e
+            export PYTHONPATH={common_exp['environment']['pythonpath']}
+            export PYTHONUNBUFFERED=1
+
+            echo "Running {exp['name']}..."
+            python3 /code/src/{exp['script']} \\
+              {script_args_str}
+
+            echo "✅ Experiment complete!"
+            ls -lh {common_exp['output']['directory']}/"""
 
         # GPU count from model config
         gpu_count = gpu_config.get('count', 1)
@@ -492,16 +533,16 @@ spec:
         image: {common_exp['image']}
         imagePullPolicy: {common_exp['image_pull_policy']}
 
-        command:
-          - python3
-          - /app/src/{exp['script']}
-
+        command: ["/bin/bash", "-c"]
         args:
-{args_yaml}
+          - |
+            {bash_command}
 
         env:
           - name: PYTHONUNBUFFERED
             value: "{common_exp['environment']['python_unbuffered']}"
+          - name: PYTHONPATH
+            value: "{common_exp['environment']['pythonpath']}"
           - name: HF_HOME
             value: {common_exp['environment']['hf_home']}
           - name: TRANSFORMERS_CACHE
@@ -523,12 +564,18 @@ spec:
             cpu: "{exp['resources']['cpu_limit']}"
 
         volumeMounts:
+          - name: code
+            mountPath: /code
+            readOnly: true
           - name: results
-            mountPath: /data/results
+            mountPath: {common_exp['output']['directory']}
           - name: model-cache
             mountPath: /models
 
       volumes:
+        - name: code
+          persistentVolumeClaim:
+            claimName: {common_exp['pvcs']['code']}
         - name: results
           persistentVolumeClaim:
             claimName: {common_exp['pvcs']['results']}

@@ -57,6 +57,84 @@ def health():
     return jsonify({"status": "ok", "model": model_name}), 200
 
 
+@app.route('/v1/score', methods=['POST'])
+def score():
+    """
+    Score multiple completions - return logprobs for each option
+
+    This is a custom endpoint for probability extraction experiments.
+    Given a prompt and list of possible completions, returns the logprob
+    for each completion.
+
+    Request:
+    {
+        "prompt": "What percentage? Answer:",
+        "completions": ["0%", "10%", "20%", ...],
+        "temperature": 1.0  (optional)
+    }
+
+    Response:
+    {
+        "scores": {
+            "0%": -5.2,
+            "10%": -3.1,
+            ...
+        }
+    }
+    """
+    try:
+        data = request.json
+        prompt = data.get('prompt', '')
+        completions = data.get('completions', [])
+
+        if not completions:
+            return jsonify({"error": "No completions provided"}), 400
+
+        logger.info(f"Scoring {len(completions)} completions for prompt (len={len(prompt)})")
+
+        scores = {}
+
+        for completion in completions:
+            # Tokenize prompt + completion
+            full_text = prompt + completion
+            inputs = tokenizer(full_text, return_tensors="pt")
+            prompt_inputs = tokenizer(prompt, return_tensors="pt")
+
+            # Move to device
+            device = next(model.parameters()).device
+            inputs = {k: v.to(device) for k, v in inputs.items()}
+            prompt_inputs = {k: v.to(device) for k, v in prompt_inputs.items()}
+
+            # Get logits for full sequence
+            with torch.no_grad():
+                outputs = model(**inputs)
+                logits = outputs.logits
+
+            # Get tokens for the completion part only
+            prompt_len = prompt_inputs['input_ids'].shape[1]
+            completion_tokens = inputs['input_ids'][0][prompt_len:]
+
+            # Compute log probability for completion
+            total_logprob = 0.0
+            for i, token_id in enumerate(completion_tokens):
+                # Get logits for position before this token
+                position_logits = logits[0, prompt_len + i - 1, :]
+                # Convert to log probabilities
+                log_probs = torch.nn.functional.log_softmax(position_logits, dim=-1)
+                # Add this token's log prob
+                total_logprob += log_probs[token_id].item()
+
+            scores[completion] = total_logprob
+
+        logger.info(f"Scored completions: {scores}")
+
+        return jsonify({"scores": scores}), 200
+
+    except Exception as e:
+        logger.error(f"Error in score endpoint: {e}", exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
+
 @app.route('/v1/completions', methods=['POST'])
 def completions():
     """
@@ -85,15 +163,19 @@ def completions():
             outputs = model.generate(
                 **inputs,
                 max_new_tokens=max_tokens,
+                min_new_tokens=10,  # Force at least some generation
                 temperature=temperature,
                 do_sample=temperature > 0,
                 return_dict_in_generate=True,
                 output_scores=logprobs is not None,
+                pad_token_id=tokenizer.eos_token_id,  # Prevent padding issues
             )
 
         # Decode
         generated_ids = outputs.sequences[0][inputs['input_ids'].shape[1]:]
         generated_text = tokenizer.decode(generated_ids, skip_special_tokens=True)
+
+        logger.info(f"Generated {len(generated_ids)} tokens, text length: {len(generated_text)}")
 
         # Prepare response
         response = {

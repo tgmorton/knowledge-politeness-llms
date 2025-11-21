@@ -15,14 +15,18 @@
 
 set -e
 
+# Activate virtual environment
+source venv-grace/bin/activate
+
 # Colors
 GREEN='\033[0;32m'
 BLUE='\033[0;34m'
 YELLOW='\033[1;33m'
+RED='\033[0;31m'
 NC='\033[0m'
 
 ENDPOINT="http://localhost:8000"
-MODEL_NAME="gemma-2-2b-it"
+MODEL_NAME="google/gemma-2-2b-it"
 OUTPUT_DIR="outputs/local_test"
 
 echo "======================================================================"
@@ -65,13 +69,13 @@ else
 fi
 
 # Test 2: Study 1 Experiment 2 (2 trials = 10 queries!)
-echo -e "${BLUE}[2/4] Testing Study 1 Experiment 2 (2 trials, 10 queries)${NC}"
-echo -e "${YELLOW}Note: This makes 5 queries per trial (10 total)${NC}"
+echo -e "${BLUE}[2/4] Testing Study 1 Experiment 2 (2 trials, 10 scoring operations)${NC}"
+echo -e "${YELLOW}Note: This uses DIRECT MODEL SCORING (no vLLM server needed)${NC}"
+echo -e "${YELLOW}This will load the model directly and compute logprobs for each option${NC}"
 python3 src/query_study1_exp2.py \
     --input data/test_samples/study1_sample.csv \
     --output "$OUTPUT_DIR/study1_exp2_test.csv" \
-    --endpoint "$ENDPOINT" \
-    --model-name "$MODEL_NAME" \
+    --model-path "$MODEL_NAME" \
     --limit 2
 
 if [ $? -eq 0 ]; then
@@ -97,13 +101,13 @@ else
     exit 1
 fi
 
-# Test 4: Study 2 Experiment 2 (2 trials = 4 queries)
-echo -e "${BLUE}[4/4] Testing Study 2 Experiment 2 (2 trials, 4 queries)${NC}"
+# Test 4: Study 2 Experiment 2 (2 trials, direct scoring)
+echo -e "${BLUE}[4/4] Testing Study 2 Experiment 2 (2 trials, 8 options per trial)${NC}"
+echo -e "${YELLOW}Note: This uses DIRECT MODEL SCORING (no vLLM server needed)${NC}"
 python3 src/query_study2_exp2.py \
     --input data/test_samples/study2_sample.csv \
     --output "$OUTPUT_DIR/study2_exp2_test.csv" \
-    --endpoint "$ENDPOINT" \
-    --model-name "$MODEL_NAME" \
+    --model-path "$MODEL_NAME" \
     --limit 2
 
 if [ $? -eq 0 ]; then
