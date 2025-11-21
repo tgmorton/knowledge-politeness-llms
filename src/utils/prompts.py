@@ -16,9 +16,11 @@ from typing import Dict
 from .model_config import get_model_config
 
 
-def construct_study1_exp1_prompt(trial: Dict, model_name: str) -> str:
+def construct_study1_exp1_quantity_prompt(trial: Dict, model_name: str) -> str:
     """
-    Construct prompt for Study 1 Experiment 1 (Knowledge Attribution - Raw Text)
+    Construct prompt for Study 1 Experiment 1 - Quantity Question
+
+    Asks: "Now how many of the 3 items do you think have the property?"
 
     Args:
         trial: Trial data dictionary with keys:
@@ -49,12 +51,61 @@ def construct_study1_exp1_prompt(trial: Dict, model_name: str) -> str:
     if model_config.is_reasoning_model:
         prompt += "\n\nPlease provide your reasoning and answer."
     elif model_config.use_direct_answer_prompt:
-        prompt += "\n\nAnswer directly without explanation.\n\nYour answer is:"
+        prompt += "\n\nAnswer directly with just a number (0, 1, 2, or 3).\n\nYour answer is:"
     else:
-        # For base models, still add the cue
-        prompt += "\n\nYour answer is:"
+        # For base models, request concise answer
+        prompt += "\n\nAnswer with just a number (0, 1, 2, or 3).\n\nYour answer is:"
 
     return prompt
+
+
+def construct_study1_exp1_knowledge_prompt(trial: Dict, model_name: str) -> str:
+    """
+    Construct prompt for Study 1 Experiment 1 - Knowledge Question
+
+    Asks: "Do you think X knows exactly how many of the 3 items have the property?"
+
+    Args:
+        trial: Trial data dictionary with knowledgeQ
+        model_name: Model identifier
+
+    Returns:
+        Formatted prompt string
+    """
+    model_config = get_model_config(model_name)
+
+    # Clean up HTML tags
+    setup = trial['story_setup'].replace('<br>', '\n').strip()
+    speach = trial['speach'].strip()
+    knowledge_q = trial['knowledgeQ'].strip()
+
+    # Base prompt
+    prompt = f"""{setup}
+
+{speach}
+
+{knowledge_q}"""
+
+    # Model-specific instruction
+    if model_config.is_reasoning_model:
+        prompt += "\n\nPlease provide your reasoning and answer."
+    elif model_config.use_direct_answer_prompt:
+        prompt += "\n\nAnswer directly with just \"yes\" or \"no\".\n\nYour answer is:"
+    else:
+        # For base models, request concise answer
+        prompt += "\n\nAnswer with just \"yes\" or \"no\".\n\nYour answer is:"
+
+    return prompt
+
+
+def construct_study1_exp1_prompt(trial: Dict, model_name: str) -> str:
+    """
+    DEPRECATED: Use construct_study1_exp1_quantity_prompt() and
+    construct_study1_exp1_knowledge_prompt() instead.
+
+    This function now calls the quantity prompt for backward compatibility.
+    """
+    return construct_study1_exp1_quantity_prompt(trial, model_name)
 
 
 def construct_study1_exp2_state_prompt(trial: Dict, state: int, model_name: str) -> str:

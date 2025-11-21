@@ -90,12 +90,13 @@ class Study1Config:
             self.input_columns = [
                 'participant_id',
                 'story_shortname',
-                'access',
-                'observe',
                 'story_setup',
                 'priorQ',
-                'speech',
-                'speechQ'
+                'speach',  # Note: 'speach' not 'speech' (original dataset spelling)
+                'speachQ',
+                'knowledgeQ',
+                'access',
+                'observe'
             ]
 
 
@@ -140,6 +141,10 @@ def get_model_config(model_name: Optional[str] = None, **kwargs) -> ModelConfig:
             config.tensor_parallel_size = 2
             config.gpu_count = 2
             config.memory_gi = 192
+
+        # Set correct dtype for modern models (Gemma-2 and Llama-3 require bfloat16)
+        if "llama" in model_name.lower() or "gemma-2" in model_name.lower():
+            config.dtype = "bfloat16"
 
     # Apply any additional overrides
     for key, value in kwargs.items():

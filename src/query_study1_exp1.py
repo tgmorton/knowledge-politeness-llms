@@ -10,11 +10,12 @@ For each trial in study1.csv:
 - Ask how many items have the property
 - Save raw text response
 
-Expected output: CSV with original columns + response, model_name, timestamp
+Expected output: JSON array with original columns + response, model_name, timestamp
 """
 
 import argparse
 import logging
+import json
 from pathlib import Path
 from datetime import datetime
 from typing import Dict, Optional
@@ -25,6 +26,11 @@ from utils.api_client import VLLMClient
 from utils.config import ExperimentConfig
 from utils.validation import validate_study1_exp1
 from utils.reasoning_trace import ReasoningTraceWriter
+from utils.model_config import get_model_config
+from utils.prompts import (
+    construct_study1_exp1_quantity_prompt,
+    construct_study1_exp1_knowledge_prompt,
+)
 
 logging.basicConfig(
     level=logging.INFO,
@@ -33,37 +39,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-def construct_prompt(trial: Dict) -> str:
-    """
-    Construct prompt for Study 1 Experiment 1
-
-    Format:
-    1. Present the scenario setup
-    2. Ask the prior question
-    3. Present the speech (observation)
-    4. Ask the posterior question
-
-    Args:
-        trial: Dictionary with trial data from study1.csv
-
-    Returns:
-        Formatted prompt string
-    """
-    # Clean up HTML tags
-    setup = trial['story_setup'].replace('<br>', '\n').strip()
-
-    # Construct the prompt
-    prompt = f"""{setup}
-
-{trial['priorQ']}
-
-{trial['speach']}
-
-{trial['speachQ']}
-
-Please provide your reasoning and answer."""
-
-    return prompt
+# Prompt construction moved to utils.prompts for consistency across all scripts
 
 
 def process_trial(
@@ -72,7 +48,7 @@ def process_trial(
     model_name: str,
 ):
     """
-    Process a single trial
+    Process a single trial with TWO sequential questions
 
     Args:
         trial: Trial data dictionary
@@ -80,36 +56,72 @@ def process_trial(
         model_name: Name of model being used
 
     Returns:
-        Tuple of (result_dict, prompt, reasoning_info)
+        Tuple of (result_dict, reasoning_info)
     """
-    # Construct prompt
-    prompt = construct_prompt(trial)
+    # Get model config
+    model_config = get_model_config(model_name)
 
-    # Query model
+    # ===== QUESTION 1: Quantity =====
+    prompt_quantity = construct_study1_exp1_quantity_prompt(trial, model_name)
+
     try:
-        response = client.generate_text(prompt)
-        response_text = response.text
-        result_id = response.result_id
-        reasoning_trace = response.reasoning_trace
+        response_quantity = client.generate_text(
+            prompt_quantity,
+            temperature=model_config.temperature_text,
+            max_tokens=model_config.max_tokens_text,
+            stop=model_config.stop_tokens,
+        )
+        quantity_text = response_quantity.text.strip()
+        quantity_result_id = response_quantity.result_id
+        quantity_reasoning = response_quantity.reasoning_trace
     except Exception as e:
-        logger.error(f"Error querying model for trial: {e}")
-        response_text = f"ERROR: {str(e)}"
-        result_id = None
-        reasoning_trace = None
+        logger.error(f"Error querying model for quantity question: {e}")
+        quantity_text = f"ERROR: {str(e)}"
+        quantity_result_id = None
+        quantity_reasoning = None
 
-    # Add response and metadata
+    # ===== QUESTION 2: Knowledge =====
+    prompt_knowledge = construct_study1_exp1_knowledge_prompt(trial, model_name)
+
+    try:
+        response_knowledge = client.generate_text(
+            prompt_knowledge,
+            temperature=model_config.temperature_text,
+            max_tokens=model_config.max_tokens_text,
+            stop=model_config.stop_tokens,
+        )
+        knowledge_text = response_knowledge.text.strip()
+        knowledge_result_id = response_knowledge.result_id
+        knowledge_reasoning = response_knowledge.reasoning_trace
+    except Exception as e:
+        logger.error(f"Error querying model for knowledge question: {e}")
+        knowledge_text = f"ERROR: {str(e)}"
+        knowledge_result_id = None
+        knowledge_reasoning = None
+
+    # Add responses and metadata
     result = trial.copy()
-    result['response'] = response_text
-    result['result_id'] = result_id
+    result['response_quantity'] = quantity_text
+    result['response_knowledge'] = knowledge_text
+    result['result_id_quantity'] = quantity_result_id
+    result['result_id_knowledge'] = knowledge_result_id
     result['model_name'] = model_name
     result['timestamp'] = datetime.now().isoformat()
 
-    # Reasoning trace info for separate file
+    # Reasoning trace info for separate file (both questions)
     reasoning_info = {
-        'result_id': result_id,
-        'reasoning_trace': reasoning_trace,
-        'prompt': prompt,
-        'response': response_text,
+        'quantity': {
+            'result_id': quantity_result_id,
+            'reasoning_trace': quantity_reasoning,
+            'prompt': prompt_quantity,
+            'response': quantity_text,
+        },
+        'knowledge': {
+            'result_id': knowledge_result_id,
+            'reasoning_trace': knowledge_reasoning,
+            'prompt': prompt_knowledge,
+            'response': knowledge_text,
+        }
     }
 
     return result, reasoning_info
@@ -166,28 +178,41 @@ def run_experiment(
         result, reasoning_info = process_trial(trial, client, model_name)
         results.append(result)
 
-        # Write reasoning trace if writer is active and trace exists
-        if reasoning_writer and reasoning_info['reasoning_trace']:
-            reasoning_writer.write_trace(
-                result_id=reasoning_info['result_id'],
-                trial_index=idx,
-                prompt=reasoning_info['prompt'],
-                reasoning_trace=reasoning_info['reasoning_trace'],
-                response=reasoning_info['response'],
-                model_name=model_name,
-            )
+        # Write reasoning traces if writer is active
+        if reasoning_writer:
+            # Write quantity question reasoning
+            if reasoning_info['quantity']['reasoning_trace']:
+                reasoning_writer.write_trace(
+                    result_id=reasoning_info['quantity']['result_id'],
+                    trial_index=idx,
+                    prompt=reasoning_info['quantity']['prompt'],
+                    reasoning_trace=reasoning_info['quantity']['reasoning_trace'],
+                    response=reasoning_info['quantity']['response'],
+                    model_name=model_name,
+                    metadata={'question_type': 'quantity'},
+                )
+
+            # Write knowledge question reasoning
+            if reasoning_info['knowledge']['reasoning_trace']:
+                reasoning_writer.write_trace(
+                    result_id=reasoning_info['knowledge']['result_id'],
+                    trial_index=idx,
+                    prompt=reasoning_info['knowledge']['prompt'],
+                    reasoning_trace=reasoning_info['knowledge']['reasoning_trace'],
+                    response=reasoning_info['knowledge']['response'],
+                    model_name=model_name,
+                    metadata={'question_type': 'knowledge'},
+                )
 
         # Log progress every 10 trials
         if (idx + 1) % 10 == 0:
             logger.info(f"Completed {idx + 1}/{len(df)} trials")
 
-    # Convert to DataFrame
-    results_df = pd.DataFrame(results)
-
-    # Save output
+    # Save output as JSON
     output_file.parent.mkdir(parents=True, exist_ok=True)
-    results_df.to_csv(output_file, index=False)
-    logger.info(f"Saved results to {output_file}")
+    with open(output_file, 'w') as f:
+        json.dump(results, f, indent=2, default=str)
+    logger.info(f"Saved {len(results)} results to {output_file}")
 
     # Validate output
     logger.info("Validating output...")

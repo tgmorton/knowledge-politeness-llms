@@ -9,6 +9,7 @@ Validates experimental outputs for:
 """
 
 import logging
+import json
 from pathlib import Path
 from typing import List, Dict, Optional, Tuple
 import pandas as pd
@@ -120,27 +121,97 @@ def validate_probabilities(
     return is_valid, errors
 
 
-def validate_study1_exp1(output_file: Path, expected_rows: int = 300) -> Tuple[bool, List[str]]:
+def validate_study1_exp1(output_file: Path, expected_rows: int = 300) -> bool:
     """
     Validate Study 1 Experiment 1 output (raw text responses)
 
-    Expected columns:
-    - Original 8 columns from study1.csv
-    - response: Generated text response
+    NEW SCHEMA (2-question format):
+    - Original 9 columns from study1.csv (including knowledgeQ)
+    - response_quantity: Quantity answer (0-3)
+    - response_knowledge: Knowledge answer (yes/no)
+    - result_id_quantity: UUID for quantity question
+    - result_id_knowledge: UUID for knowledge question
     - model_name: Name of model used
     - timestamp: When query was made
 
     Args:
-        output_file: Path to output CSV
+        output_file: Path to output JSON file
         expected_rows: Expected number of trials
 
     Returns:
-        Tuple of (is_valid, error_messages)
+        True if validation passed, False otherwise
     """
-    config = Study1Config()
-    expected_columns = config.input_columns + ['response', 'model_name', 'timestamp']
+    errors = []
 
-    return validate_output_schema(output_file, expected_columns, expected_rows)
+    # Check file exists
+    if not output_file.exists():
+        logger.error(f"Output file does not exist: {output_file}")
+        return False
+
+    # Load JSON
+    try:
+        with open(output_file, 'r') as f:
+            data = json.load(f)
+    except Exception as e:
+        logger.error(f"Failed to read JSON: {e}")
+        return False
+
+    # Check it's a list
+    if not isinstance(data, list):
+        logger.error("Output must be a JSON array")
+        return False
+
+    # Check row count
+    if len(data) != expected_rows:
+        logger.warning(f"Expected {expected_rows} rows, got {len(data)}")
+
+    if len(data) == 0:
+        logger.error("Output file is empty")
+        return False
+
+    # Check schema of first record
+    config = Study1Config()
+    required_fields = (
+        config.input_columns +
+        ['response_quantity', 'response_knowledge',
+         'result_id_quantity', 'result_id_knowledge',
+         'model_name', 'timestamp']
+    )
+
+    first_record = data[0]
+    missing_fields = [f for f in required_fields if f not in first_record]
+    if missing_fields:
+        logger.error(f"Missing required fields: {missing_fields}")
+        errors.append(f"Missing fields: {missing_fields}")
+
+    # Check for empty responses
+    empty_quantity = sum(1 for r in data if not r.get('response_quantity'))
+    empty_knowledge = sum(1 for r in data if not r.get('response_knowledge'))
+
+    if empty_quantity > 0:
+        logger.warning(f"{empty_quantity} trials have empty quantity responses")
+    if empty_knowledge > 0:
+        logger.warning(f"{empty_knowledge} trials have empty knowledge responses")
+
+    # Check for error responses
+    error_quantity = sum(1 for r in data if 'ERROR:' in str(r.get('response_quantity', '')))
+    error_knowledge = sum(1 for r in data if 'ERROR:' in str(r.get('response_knowledge', '')))
+
+    if error_quantity > 0:
+        logger.warning(f"{error_quantity} trials have error in quantity responses")
+    if error_knowledge > 0:
+        logger.warning(f"{error_knowledge} trials have error in knowledge responses")
+
+    is_valid = len(errors) == 0
+
+    if is_valid:
+        logger.info(f"✅ Validation passed: {len(data)} trials")
+        logger.info(f"   Quantity responses: {len(data) - empty_quantity - error_quantity} valid")
+        logger.info(f"   Knowledge responses: {len(data) - empty_knowledge - error_knowledge} valid")
+    else:
+        logger.error(f"❌ Validation failed: {errors}")
+
+    return is_valid
 
 
 def validate_study1_exp2(output_file: Path, expected_rows: int = 300) -> Tuple[bool, List[str]]:
