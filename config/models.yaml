@@ -35,6 +35,9 @@ models:
       name: vllm-gemma-2b-rtx3090
       service_name: vllm-gemma-2b
 
+    replication:
+      parallelism: 3  # 1 GPU per replication, can run 3 in parallel
+
   llama-3b-rtx3090:
     display_name: "Llama 3.2 3B"
     huggingface_name: meta-llama/Llama-3.2-3B-Instruct
@@ -62,6 +65,9 @@ models:
     deployment:
       name: vllm-llama-3b-rtx3090
       service_name: vllm-llama-3b
+
+    replication:
+      parallelism: 3  # 1 GPU per replication, can run 3 in parallel
 
   gemma-9b-rtx3090:
     display_name: "Gemma 9B"
@@ -91,6 +97,9 @@ models:
       name: vllm-gemma-9b-rtx3090
       service_name: vllm-gemma-9b
 
+    replication:
+      parallelism: 3  # 1 GPU per replication, can run 3 in parallel
+
   llama-8b-rtx3090:
     display_name: "Llama 3.1 8B"
     huggingface_name: meta-llama/Llama-3.1-8B-Instruct
@@ -119,22 +128,25 @@ models:
       name: vllm-llama-8b-rtx3090
       service_name: vllm-llama-8b
 
+    replication:
+      parallelism: 3  # 1 GPU per replication, can run 3 in parallel
+
   gemma-27b-rtx3090:
     display_name: "Gemma 27B"
     huggingface_name: google/gemma-2-27b-it
-    description: "Large Gemma model on 2x L40 GPUs (88GB total VRAM)"
+    description: "Large Gemma model on 4x RTX 3090 GPUs (96GB total VRAM)"
 
     gpu:
-      count: 2  # Tensor parallelism across 2 GPUs
-      type: L40
-      vram_per_gpu: 44GB
-      node_selector: NVIDIA-L40
+      count: 4  # Tensor parallelism across 4 GPUs
+      type: RTX-3090
+      vram_per_gpu: 24GB
+      node_selector: NVIDIA-GeForce-RTX-3090
 
     vllm:
       dtype: bfloat16
-      quantization: null  # Full bfloat16, no quantization needed (88GB available)
+      quantization: null  # Full bfloat16, no quantization needed (96GB available)
       max_model_len: 4096
-      tensor_parallel_size: 2
+      tensor_parallel_size: 4
 
     resources:
       memory_request: 60Gi
@@ -147,48 +159,50 @@ models:
       name: vllm-gemma-27b-rtx3090
       service_name: vllm-gemma-27b
 
+    replication:
+      parallelism: 1  # 4 GPUs per replication, run sequentially to avoid deadlocks
+
   llama-70b-rtx3090:
     display_name: "Llama 3.1 70B"
     huggingface_name: meta-llama/Llama-3.1-70B-Instruct
-    description: "Largest model, requires 4 GPUs with AWQ quantization"
+    description: "Largest model, requires 8 GPUs without quantization"
 
     gpu:
-      count: 4  # ⚠️ Requires NRP exception (default limit is 2 GPUs)
+      count: 8  # 8x RTX-3090 for full bfloat16 precision
       type: RTX-3090
       vram_per_gpu: 24GB
       node_selector: NVIDIA-GeForce-RTX-3090
 
     vllm:
       dtype: bfloat16
-      quantization: awq  # Required to fit in 4x24GB (~140GB model → ~35GB quantized)
+      quantization: null  # No quantization, using 8 GPUs for full precision
       max_model_len: 4096
-      tensor_parallel_size: 4
+      tensor_parallel_size: 8
 
     resources:
-      memory_request: 80Gi
-      memory_limit: 96Gi      # 120% (compliant ✅)
-      cpu_request: "32"
-      cpu_limit: "38400m"     # 120% (compliant ✅)
-      shm_size: 32Gi
+      memory_request: 120Gi
+      memory_limit: 144Gi     # 120% (compliant ✅)
+      cpu_request: "48"
+      cpu_limit: "57600m"     # 120% (compliant ✅)
+      shm_size: 48Gi
 
     deployment:
       name: vllm-llama-70b-rtx3090
       service_name: vllm-llama-70b
 
+    replication:
+      parallelism: 1  # 8 GPUs per replication, MUST run sequentially
+
     notes: |
-      This configuration requires a 4-GPU exception from NRP.
+      This configuration uses 8 GPUs for full bfloat16 precision (no quantization).
+      NRP automatically grants tolerations for 8-GPU jobs.
 
-      To request exception:
-      1. Join NRP Matrix chat: https://matrix.to/#/#nrp:matrix.org
-      2. Request 4-GPU pod allocation for Llama-70B inference
-      3. Justification: Sequential deployment, <1 day per model, academic research
-
-      Alternative: Skip this model on RTX 3090, run on A100 later
+      Total VRAM: 8 × 24GB = 192GB (sufficient for ~140GB model + overhead)
 
   deepseek-r1-70b-rtx3090:
     display_name: "DeepSeek-R1 70B"
     huggingface_name: deepseek-ai/DeepSeek-R1
-    description: "Reasoning model with explicit chain-of-thought, requires 4 GPUs with AWQ"
+    description: "Reasoning model with explicit chain-of-thought, requires 8 GPUs without quantization"
 
     # Mark as reasoning model for special handling
     reasoning_model: true
@@ -197,27 +211,30 @@ models:
       end: "</think>"
 
     gpu:
-      count: 4  # ⚠️ Requires NRP exception (default limit is 2 GPUs)
+      count: 8  # 8x RTX-3090 for full bfloat16 precision
       type: RTX-3090
       vram_per_gpu: 24GB
       node_selector: NVIDIA-GeForce-RTX-3090
 
     vllm:
       dtype: bfloat16
-      quantization: awq  # Required to fit in 4x24GB (~140GB model → ~35GB quantized)
+      quantization: null  # No quantization, using 8 GPUs for full precision
       max_model_len: 4096
-      tensor_parallel_size: 4
+      tensor_parallel_size: 8
 
     resources:
-      memory_request: 80Gi
-      memory_limit: 96Gi      # 120% (compliant ✅)
-      cpu_request: "32"
-      cpu_limit: "38400m"     # 120% (compliant ✅)
-      shm_size: 32Gi
+      memory_request: 120Gi
+      memory_limit: 144Gi     # 120% (compliant ✅)
+      cpu_request: "48"
+      cpu_limit: "57600m"     # 120% (compliant ✅)
+      shm_size: 48Gi
 
     deployment:
       name: vllm-deepseek-r1-70b-rtx3090
       service_name: vllm-deepseek-r1-70b
+
+    replication:
+      parallelism: 1  # 8 GPUs per replication, MUST run sequentially
 
     notes: |
       Reasoning model with explicit chain-of-thought traces.
@@ -227,7 +244,10 @@ models:
       - Extract reasoning traces separately from final answers
       - Token-level logprobs for both reasoning and answer tokens
 
-      Same GPU requirements as Llama-70B (4-GPU exception needed).
+      Uses 8 GPUs for full bfloat16 precision (no quantization).
+      NRP automatically grants tolerations for 8-GPU jobs.
+
+      Total VRAM: 8 × 24GB = 192GB (sufficient for ~140GB model + overhead)
 
 # Common settings for all models
 common:
