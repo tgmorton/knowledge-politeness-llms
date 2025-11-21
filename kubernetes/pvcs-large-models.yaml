@@ -1,0 +1,40 @@
+---
+# Persistent Volume Claims for Large Model Caches
+# Separate PVCs for 70B models to handle their size (~140GB each)
+
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: thomas-grace-llama-70b-cache
+  namespace: lemn-lab
+  labels:
+    project: grace-experiments
+    purpose: model-cache
+    model: llama-70b
+    owner: thomas
+spec:
+  accessModes:
+    - ReadWriteMany  # vLLM deployment and jobs can share
+  resources:
+    requests:
+      storage: 400Gi  # Llama 3.1 70B (larger than expected, needs extra space)
+  storageClassName: rook-cephfs
+
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: thomas-grace-deepseek-r1-70b-cache
+  namespace: lemn-lab
+  labels:
+    project: grace-experiments
+    purpose: model-cache
+    model: deepseek-r1-70b
+    owner: thomas
+spec:
+  accessModes:
+    - ReadWriteMany  # vLLM deployment and jobs can share
+  resources:
+    requests:
+      storage: 400Gi  # DeepSeek-R1 70B (larger than expected, needs extra space)
+  storageClassName: rook-cephfs
