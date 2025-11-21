@@ -98,9 +98,9 @@ spec:
         - name: HF_HOME
           value: /model-cache
 
-        # Python path for imports
+        # Python path for imports (NO /code/venv/lib - NRP CephFS policy violation!)
         - name: PYTHONPATH
-          value: /code:/code/venv/lib
+          value: /code
 
         command: ["/bin/bash", "-c"]
         args:
@@ -120,6 +120,18 @@ spec:
           # Calculate seed for this replication
           SEED=$((BASE_SEED + REPLICATION_ID))
           echo "Calculated seed: $SEED"
+
+          # Install dependencies to container (NOT to CephFS - NRP policy)
+          echo ""
+          echo "Installing Python dependencies..."
+          pip install --no-cache-dir \
+            httpx pandas tqdm \
+            transformers accelerate scipy \
+            sentencepiece protobuf tokenizers \
+            huggingface-hub safetensors \
+            pyyaml regex filelock numpy packaging
+          echo "✓ Dependencies installed"
+          echo ""
 
           # Create output directory for this replication
           OUTPUT_DIR="/results/{{ model_key }}/replication-${REPLICATION_ID}"
