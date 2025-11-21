@@ -52,6 +52,9 @@ secrets/
 # data/*.csv
 # Analysis/data/*.csv
 
+# Outputs (generated results)
+outputs/
+
 # Logs
 *.log
 
