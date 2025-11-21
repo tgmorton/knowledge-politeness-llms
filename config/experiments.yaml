@@ -22,7 +22,7 @@ experiments:
 
     # Script and data
     script: query_study1_exp1.py
-    input_file: /app/data/study1.csv
+    input_file: /code/data/study1.csv
     output_format: json  # JSON with embedded reasoning traces
 
     study_number: 1
@@ -66,7 +66,7 @@ experiments:
 
     # Script and data
     script: query_study1_exp2.py
-    input_file: /app/data/study1.csv
+    input_file: /code/data/study1.csv
     output_format: json
 
     study_number: 1
@@ -114,7 +114,7 @@ experiments:
 
     # Script and data
     script: query_study2_exp1.py
-    input_file: /app/data/study2.csv
+    input_file: /code/data/study2.csv
     output_format: json
 
     study_number: 2
@@ -157,7 +157,7 @@ experiments:
 
     # Script and data
     script: query_study2_exp2.py
-    input_file: /app/data/study2.csv
+    input_file: /code/data/study2.csv
     output_format: json
 
     study_number: 2
@@ -196,12 +196,13 @@ experiments:
 common:
   namespace: lemn-lab
 
-  image: gitlab-registry.nrp-nautilus.io/thmorton/grace-project/query-generator:latest
+  image: pytorch/pytorch:2.5.1-cuda12.4-cudnn9-runtime
   image_pull_policy: Always
 
   pvcs:
     results: thomas-grace-results
     model_cache: thomas-grace-model-cache
+    code: grace-code
 
   job:
     backoff_limit: 0               # Don't retry on failure (let user debug)
@@ -211,9 +212,10 @@ common:
   environment:
     python_unbuffered: "1"         # Immediate log output
     hf_home: /models/.cache
+    pythonpath: "/code:/code/venv/lib"
 
   output:
-    directory: /data/results
+    directory: /results
     filename_pattern: "study{study}_exp{exp}_{model}_{timestamp}.json"
 
   notes: |

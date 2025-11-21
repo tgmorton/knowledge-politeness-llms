@@ -1,0 +1,28 @@
+# Grace Project - PVC-Based Deployment Approach
+#
+# This file creates the code PVC only
+# Model cache and results PVCs already exist (thomas-grace-*)
+
+---
+# PVC for Python code and dependencies (NEW)
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: grace-code
+  namespace: lemn-lab
+  labels:
+    app: grace-project
+    component: code
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: rook-ceph-block
+  resources:
+    requests:
+      storage: 10Gi
+
+---
+# NOTE: Reusing existing PVCs for model cache and results:
+# - thomas-grace-model-cache (250Gi) - for model weights
+# - thomas-grace-results (50Gi) - for experiment outputs
+# No need to create duplicates!

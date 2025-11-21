@@ -1,0 +1,101 @@
+---
+# Test PVC for validation
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: test-venv
+  namespace: lemn-lab
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: rook-ceph-block
+  resources:
+    requests:
+      storage: 2Gi
+
+---
+# Step 1: Job to install a simple package to PVC
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: test-setup-venv
+  namespace: lemn-lab
+spec:
+  ttlSecondsAfterFinished: 3600
+  template:
+    metadata:
+      labels:
+        app: test-setup
+    spec:
+      restartPolicy: Never
+      containers:
+      - name: setup
+        image: pytorch/pytorch:2.5.1-cuda12.4-cudnn9-runtime
+        command: ["/bin/bash", "-c"]
+        args:
+          - |
+            set -e
+            echo "===== Installing httpx to PVC ====="
+            pip install --target=/venv/lib httpx
+
+            echo "===== Creating test script ====="
+            cat > /venv/test.py << 'EOF'
+            import httpx
+            print("✅ SUCCESS: httpx imported from PVC!")
+            print(f"httpx version: {httpx.__version__}")
+            EOF
+
+            echo "===== Setup complete ====="
+            ls -lah /venv
+        volumeMounts:
+          - name: venv
+            mountPath: /venv
+        resources:
+          requests:
+            memory: "2Gi"
+            cpu: "1"
+          limits:
+            memory: "2.4Gi"
+            cpu: "1.2"
+      volumes:
+        - name: venv
+          persistentVolumeClaim:
+            claimName: test-venv
+
+---
+# Step 2: Job to verify we can use the package from PVC
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: test-use-venv
+  namespace: lemn-lab
+spec:
+  ttlSecondsAfterFinished: 3600
+  template:
+    metadata:
+      labels:
+        app: test-use
+    spec:
+      restartPolicy: Never
+      containers:
+      - name: verify
+        image: pytorch/pytorch:2.5.1-cuda12.4-cudnn9-runtime
+        env:
+          - name: PYTHONPATH
+            value: "/venv/lib"
+        command: ["python", "/venv/test.py"]
+        volumeMounts:
+          - name: venv
+            mountPath: /venv
+            readOnly: true
+        resources:
+          requests:
+            memory: "1Gi"
+            cpu: "1"
+          limits:
+            memory: "1.2Gi"
+            cpu: "1.2"
+      volumes:
+        - name: venv
+          persistentVolumeClaim:
+            claimName: test-venv

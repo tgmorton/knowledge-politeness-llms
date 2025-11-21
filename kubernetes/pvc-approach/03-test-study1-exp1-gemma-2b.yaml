@@ -1,0 +1,113 @@
+# Grace Project - Test Job: Study 1 Experiment 1 with Gemma-2-2B
+#
+# Tests the PVC-based approach with a small subset of Study 1 Exp 1
+#
+# Prerequisites:
+# - PVCs created (00-pvcs.yaml)
+# - Environment setup complete (01-setup-environment.yaml)
+# - vLLM server running (02-vllm-gemma-2b.yaml)
+#
+# This job:
+# - Runs 10 trials (instead of 300) for quick validation
+# - Uses code from PVC (no Docker build needed!)
+# - Writes results to PVC
+
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: test-study1-exp1-gemma-2b
+  namespace: lemn-lab
+  labels:
+    app: grace-experiment
+    study: "1"
+    experiment: "1"
+    model: gemma-2b
+    test: "true"
+spec:
+  backoffLimit: 0
+  ttlSecondsAfterFinished: 3600  # Keep for 1 hour
+
+  template:
+    metadata:
+      labels:
+        app: grace-experiment
+        study: "1"
+        experiment: "1"
+        model: gemma-2b
+    spec:
+      restartPolicy: Never
+
+      containers:
+      - name: experiment-runner
+        image: pytorch/pytorch:2.5.1-cuda12.4-cudnn9-runtime
+        imagePullPolicy: Always
+
+        command: ["/bin/bash", "-c"]
+        args:
+          - |
+            set -e
+
+            echo "===== Grace Test: Study 1 Exp 1 with Gemma-2-2B ====="
+            echo "Timestamp: $(date)"
+            echo ""
+
+            # Set up Python environment
+            export PYTHONPATH=/code:/code/venv/lib
+            export PYTHONUNBUFFERED=1
+
+            # Verify imports
+            echo "Testing imports..."
+            python3 -c "import httpx; import pandas; from src.utils.api_client import VLLMClient; print('✓ Imports OK')"
+            echo ""
+
+            # Wait for vLLM server to be ready
+            echo "Waiting for vLLM server..."
+            until curl -s http://vllm-gemma-2b:8000/health | grep -q "ok"; do
+              echo "  Waiting for vLLM server to start..."
+              sleep 5
+            done
+            echo "✓ vLLM server ready"
+            echo ""
+
+            # Run experiment with limited trials
+            echo "Running Study 1 Experiment 1 (10 trials for testing)..."
+            python3 /code/src/query_study1_exp1.py \
+              --input=/code/data/study1.csv \
+              --output=/results/test_study1_exp1_gemma-2b_$(date +%Y%m%d_%H%M%S).json \
+              --endpoint=http://vllm-gemma-2b:8000 \
+              --model-name=google/gemma-2-2b-it \
+              --limit=10
+
+            echo ""
+            echo "===== Test Complete ====="
+            echo "Check /results/ for output file"
+            ls -lh /results/
+
+        env:
+          - name: PYTHONUNBUFFERED
+            value: "1"
+          - name: PYTHONPATH
+            value: "/code:/code/venv/lib"
+
+        volumeMounts:
+          - name: code
+            mountPath: /code
+            readOnly: true
+          - name: results
+            mountPath: /results
+
+        resources:
+          requests:
+            memory: "4Gi"
+            cpu: "2"
+          limits:
+            memory: "4800Mi"  # 120% (NRP-compliant)
+            cpu: "2400m"      # 120% (NRP-compliant)
+
+      volumes:
+        - name: code
+          persistentVolumeClaim:
+            claimName: grace-code
+        - name: results
+          persistentVolumeClaim:
+            claimName: thomas-grace-results

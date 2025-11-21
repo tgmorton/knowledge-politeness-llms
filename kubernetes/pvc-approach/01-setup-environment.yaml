@@ -1,0 +1,138 @@
+# Grace Project - Setup Job
+#
+# This job prepares the code PVC with:
+# - Python source code from GitHub
+# - All Python dependencies installed
+# - Input data files
+# - Directory structure for outputs
+#
+# Run this ONCE before deploying vLLM or experiment jobs
+
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: grace-setup-environment
+  namespace: lemn-lab
+  labels:
+    app: grace-project
+    component: setup
+spec:
+  ttlSecondsAfterFinished: 86400  # Keep for 24 hours
+  template:
+    metadata:
+      labels:
+        app: grace-project
+        component: setup
+    spec:
+      restartPolicy: Never
+
+      containers:
+      - name: setup
+        image: pytorch/pytorch:2.5.1-cuda12.4-cudnn9-runtime
+        command: ["/bin/bash", "-c"]
+        args:
+          - |
+            set -e  # Exit on any error
+
+            echo "===== Grace Project Environment Setup ====="
+            echo "Timestamp: $(date)"
+            echo ""
+
+            # Clean any previous setup attempts
+            echo "Cleaning previous setup..."
+            rm -rf /code/repo /code/venv /code/src /code/data /code/outputs /code/logs
+            echo "✓ Cleaned"
+            echo ""
+
+            # Install git (PyTorch base image doesn't include it)
+            echo "[0/6] Installing git..."
+            apt-get update -qq && apt-get install -y -qq git > /dev/null
+            echo "✓ Git installed"
+            echo ""
+
+            # Clone source code from GitHub
+            echo "[1/6] Cloning source code from GitHub..."
+            cd /code
+            git clone https://github.com/tgmorton/knowledge-politeness-llms.git repo
+            echo "✓ Cloned commit: $(cd repo && git rev-parse --short HEAD)"
+            echo ""
+
+            # Install Python dependencies
+            echo "[2/6] Installing Python dependencies..."
+            pip install --target=/code/venv/lib \
+              "httpx>=0.25.0" \
+              "pandas>=2.0.0" \
+              "scipy>=1.10.0" \
+              "tqdm>=4.65.0" \
+              "typing-extensions>=4.5.0" \
+              "transformers>=4.35.0" \
+              "accelerate>=0.25.0" \
+              "sentencepiece>=0.1.99" \
+              "protobuf>=4.25.0"
+            echo "✓ Dependencies installed to /code/venv/lib"
+            echo ""
+
+            # Copy source code to clean location
+            echo "[3/6] Organizing source code..."
+            cp -r /code/repo/src /code/src
+            cp -r /code/repo/data /code/data
+            echo "✓ Source code organized"
+            echo ""
+
+            # Create output directories
+            echo "[4/6] Creating output directories..."
+            mkdir -p /code/outputs/study1/exp1
+            mkdir -p /code/outputs/study1/exp2
+            mkdir -p /code/outputs/study2/exp1
+            mkdir -p /code/outputs/study2/exp2
+            mkdir -p /code/logs
+            echo "✓ Output directories created"
+            echo ""
+
+            # Verify setup
+            echo "[5/6] Verifying setup..."
+            echo "Code structure:"
+            ls -lh /code/
+            echo ""
+            echo "Python modules:"
+            ls -lh /code/src/
+            echo ""
+            echo "Utility modules:"
+            ls -lh /code/src/utils/
+            echo ""
+            echo "Data files:"
+            ls -lh /code/data/
+            echo ""
+            echo "Dependencies installed:"
+            ls /code/venv/lib/ | head -20
+            echo ""
+
+            # Test import
+            echo "[6/6] Testing Python imports..."
+            export PYTHONPATH=/code:/code/venv/lib
+            python3 -c "import httpx; import pandas; import transformers; print('✓ All imports successful')"
+            echo ""
+
+            echo "===== Setup Complete ====="
+            echo "✅ Environment ready for experiments!"
+            echo ""
+            echo "Next steps:"
+            echo "  1. Deploy vLLM server"
+            echo "  2. Run experiment jobs"
+
+        volumeMounts:
+          - name: code
+            mountPath: /code
+
+        resources:
+          requests:
+            memory: "4Gi"
+            cpu: "2"
+          limits:
+            memory: "4800Mi"  # 120% of request (NRP-compliant)
+            cpu: "2400m"      # 120% of request (NRP-compliant)
+
+      volumes:
+        - name: code
+          persistentVolumeClaim:
+            claimName: grace-code

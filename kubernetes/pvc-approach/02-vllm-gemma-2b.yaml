@@ -1,0 +1,141 @@
+# Grace Project - vLLM Server for Gemma-2-2B
+#
+# Uses official vLLM image (no custom code needed for model serving)
+# Serves Gemma-2-2B via OpenAI-compatible API
+#
+# Prerequisites:
+# - PVCs created (00-pvcs.yaml)
+# - HuggingFace token secret exists
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vllm-gemma-2b
+  namespace: lemn-lab
+  labels:
+    app: vllm
+    model: gemma-2b
+    project: grace
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: vllm
+      model: gemma-2b
+
+  template:
+    metadata:
+      labels:
+        app: vllm
+        model: gemma-2b
+        project: grace
+    spec:
+      # Schedule on RTX 3090 nodes
+      nodeSelector:
+        nvidia.com/gpu.product: NVIDIA-GeForce-RTX-3090
+
+      tolerations:
+        - key: nvidia.com/gpu
+          operator: Exists
+          effect: NoSchedule
+
+      containers:
+      - name: vllm-server
+        image: vllm/vllm-openai:latest
+        imagePullPolicy: Always
+
+        command:
+          - python3
+          - -m
+          - vllm.entrypoints.openai.api_server
+
+        args:
+          - --model=google/gemma-2-2b-it
+          - --dtype=bfloat16
+          - --max-model-len=4096
+          - --tensor-parallel-size=1
+          - --host=0.0.0.0
+          - --port=8000
+          - --disable-log-requests
+
+        ports:
+          - containerPort: 8000
+            name: http
+            protocol: TCP
+
+        env:
+          - name: HF_HOME
+            value: /models/.cache
+          - name: TRANSFORMERS_CACHE
+            value: /models/.cache
+          - name: HF_TOKEN
+            valueFrom:
+              secretKeyRef:
+                name: hf-token-thomas
+                key: HF_TOKEN
+                optional: true
+
+        volumeMounts:
+          - name: shm
+            mountPath: /dev/shm
+          - name: model-cache
+            mountPath: /models
+
+        resources:
+          requests:
+            nvidia.com/gpu: 1
+            memory: "16Gi"
+            cpu: "8"
+          limits:
+            nvidia.com/gpu: 1
+            memory: "19Gi"      # 118.75% (NRP-compliant)
+            cpu: "9600m"        # 120% (NRP-compliant)
+
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8000
+          initialDelaySeconds: 180  # Model loading takes time
+          periodSeconds: 30
+          timeoutSeconds: 10
+          failureThreshold: 3
+
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8000
+          initialDelaySeconds: 120
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+
+      volumes:
+        - name: shm
+          emptyDir:
+            medium: Memory
+            sizeLimit: 8Gi
+        - name: model-cache
+          persistentVolumeClaim:
+            claimName: thomas-grace-model-cache
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: vllm-gemma-2b
+  namespace: lemn-lab
+  labels:
+    app: vllm
+    model: gemma-2b
+    project: grace
+spec:
+  type: ClusterIP
+  selector:
+    app: vllm
+    model: gemma-2b
+  ports:
+    - name: http
+      port: 8000
+      targetPort: 8000
+      protocol: TCP

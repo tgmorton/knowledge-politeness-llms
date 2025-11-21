@@ -1,0 +1,101 @@
+---
+# Model Download Job: Gemma-27B
+# Pre-downloads model weights to PVC before GPU deployment
+# No GPUs needed - runs on CPU nodes
+
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: download-gemma-27b
+  namespace: lemn-lab
+  labels:
+    app: model-downloader
+    model: gemma-27b
+    project: grace-experiments
+spec:
+  ttlSecondsAfterFinished: 3600  # Keep pod for 1 hour after completion
+  backoffLimit: 3
+  template:
+    metadata:
+      labels:
+        app: model-downloader
+        model: gemma-27b
+    spec:
+      restartPolicy: OnFailure
+
+      containers:
+      - name: downloader
+        image: python:3.11-slim
+
+        command:
+          - /bin/bash
+          - -c
+          - |
+            set -e
+
+            echo "Installing dependencies..."
+            pip install --no-cache-dir transformers huggingface_hub torch --index-url https://download.pytorch.org/whl/cpu
+
+            python3 << 'EOF'
+            from transformers import AutoTokenizer, AutoModelForCausalLM
+            import os
+            import glob
+
+            model_name = "google/gemma-2-27b-it"
+            cache_dir = "/models/.cache"
+
+            print(f"Starting download of {model_name}...")
+            print(f"Cache directory: {cache_dir}")
+
+            # Download tokenizer
+            print("Downloading tokenizer...")
+            AutoTokenizer.from_pretrained(model_name, cache_dir=cache_dir)
+            print("✅ Tokenizer downloaded")
+
+            # Download model weights
+            print("Downloading model weights (this may take 10-20 minutes)...")
+            AutoModelForCausalLM.from_pretrained(
+                model_name,
+                cache_dir=cache_dir,
+                torch_dtype="auto"
+            )
+            print("✅ Model weights downloaded")
+
+            # Verify
+            model_files = glob.glob(f"{cache_dir}/models--google--gemma-2-27b-it/**/*", recursive=True)
+            total_size = sum(os.path.getsize(f) for f in model_files if os.path.isfile(f))
+            print(f"Total cached size: {total_size / (1024**3):.2f} GB")
+            print("✅ Download complete! Model is cached and ready for vLLM deployment.")
+            EOF
+
+        env:
+          - name: HF_HOME
+            value: /models/.cache
+          - name: TRANSFORMERS_CACHE
+            value: /models/.cache
+          - name: HF_TOKEN
+            valueFrom:
+              secretKeyRef:
+                name: hf-token-thomas
+                key: HF_TOKEN
+          - name: TRANSFORMERS_VERBOSITY
+            value: info
+          - name: HF_HUB_DISABLE_PROGRESS_BARS
+            value: "0"
+
+        volumeMounts:
+          - name: model-cache
+            mountPath: /models
+
+        resources:
+          requests:
+            memory: 10Gi
+            cpu: "4"
+          limits:
+            memory: 12Gi
+            cpu: "4800m"  # 120% of request (NRP compliant)
+
+      volumes:
+        - name: model-cache
+          persistentVolumeClaim:
+            claimName: thomas-grace-model-cache

@@ -1,0 +1,73 @@
+---
+# Cache warmup job for large model
+# Pre-fetches model files to shared storage
+
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: cache-warmup-g27b
+  namespace: lemn-lab
+  labels:
+    app: cache-warmup
+    project: grace-experiments
+spec:
+  ttlSecondsAfterFinished: 3600
+  backoffLimit: 2
+  template:
+    metadata:
+      labels:
+        app: cache-warmup
+    spec:
+      restartPolicy: OnFailure
+
+      containers:
+      - name: fetcher
+        image: vllm/vllm-openai:latest
+
+        command:
+          - python3
+          - -c
+          - |
+            from huggingface_hub import snapshot_download
+            import os
+
+            print("Starting download of google/gemma-2-27b-it...")
+
+            snapshot_download(
+                repo_id="google/gemma-2-27b-it",
+                cache_dir="/models/.cache",
+                local_dir_use_symlinks=False
+            )
+
+            print("✅ Download complete!")
+
+            # Show size
+            os.system("du -sh /models/.cache/models--google--gemma-2-27b-it 2>/dev/null || echo 'Cache populated'")
+
+        env:
+          - name: HF_HOME
+            value: /models/.cache
+          - name: HF_HUB_CACHE
+            value: /models/.cache
+          - name: HF_TOKEN
+            valueFrom:
+              secretKeyRef:
+                name: hf-token-thomas
+                key: HF_TOKEN
+
+        volumeMounts:
+          - name: cache
+            mountPath: /models
+
+        resources:
+          requests:
+            memory: 8Gi
+            cpu: "2"
+          limits:
+            memory: 9600Mi  # 120% of 8Gi (compliant)
+            cpu: "2400m"    # 120% (compliant)
+
+      volumes:
+        - name: cache
+          persistentVolumeClaim:
+            claimName: thomas-grace-model-cache
