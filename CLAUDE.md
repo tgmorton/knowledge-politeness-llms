@@ -628,3 +628,4 @@ When assisting with this project, **emphasize efficiency and compliance**. Every
 *Last Updated*: 2025-01-16  
 *Document Version*: 1.0  
 *Status*: Active - Use this as primary assistant guide
+- make sure not to follow if you get logs, so it doesn't trap you in a timeout
