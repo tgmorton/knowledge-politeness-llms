@@ -78,10 +78,16 @@ class ModelScorer:
         else:
             logger.info(f"Loading model: {model_name}")
 
-        # Determine device
+        # Determine device and device_map
+        device_map_for_model = device  # Will be used in from_pretrained
         if device == "auto":
             if torch.cuda.is_available():
                 device = "cuda"
+                # For multi-GPU setups, use device_map="auto" to distribute model
+                gpu_count = torch.cuda.device_count()
+                if gpu_count > 1:
+                    device_map_for_model = "auto"
+                    logger.info(f"Detected {gpu_count} GPUs - will use automatic device mapping")
             elif torch.backends.mps.is_available():
                 device = "mps"
             else:
@@ -111,7 +117,7 @@ class ModelScorer:
         self.model = AutoModelForCausalLM.from_pretrained(
             model_name,
             torch_dtype=torch_dtype,
-            device_map=device,
+            device_map=device_map_for_model,
             low_cpu_mem_usage=True,
             cache_dir=cache_dir
         )
