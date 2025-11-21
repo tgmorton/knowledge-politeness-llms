@@ -31,6 +31,12 @@ from utils.prompts import (
     construct_study1_exp1_quantity_prompt,
     construct_study1_exp1_knowledge_prompt,
 )
+from utils.replication import (
+    add_replication_args,
+    initialize_replication,
+    shuffle_trials,
+    add_replication_metadata,
+)
 
 logging.basicConfig(
     level=logging.INFO,
@@ -46,6 +52,7 @@ def process_trial(
     trial: Dict,
     client: VLLMClient,
     model_name: str,
+    seed: Optional[int] = None,
 ):
     """
     Process a single trial with TWO sequential questions
@@ -54,6 +61,7 @@ def process_trial(
         trial: Trial data dictionary
         client: VLLMClient instance
         model_name: Name of model being used
+        seed: Optional random seed for API calls
 
     Returns:
         Tuple of (result_dict, reasoning_info)
@@ -70,6 +78,7 @@ def process_trial(
             temperature=model_config.temperature_text,
             max_tokens=model_config.max_tokens_text,
             stop=model_config.stop_tokens,
+            seed=seed,
         )
         quantity_text = response_quantity.text.strip()
         quantity_result_id = response_quantity.result_id
@@ -89,6 +98,7 @@ def process_trial(
             temperature=model_config.temperature_text,
             max_tokens=model_config.max_tokens_text,
             stop=model_config.stop_tokens,
+            seed=seed,
         )
         knowledge_text = response_knowledge.text.strip()
         knowledge_result_id = response_knowledge.result_id
@@ -134,6 +144,7 @@ def run_experiment(
     model_name: str,
     reasoning_output: Optional[Path] = None,
     limit: int = None,
+    replication_context: Optional[Dict] = None,
 ):
     """
     Run Study 1 Experiment 1
@@ -145,12 +156,18 @@ def run_experiment(
         model_name: Name of model being queried
         reasoning_output: Optional path to save reasoning traces (JSONL)
         limit: Optional limit on number of trials (for testing)
+        replication_context: Optional replication context from initialize_replication()
     """
     logger.info(f"Starting Study 1 Experiment 1")
     logger.info(f"Input: {input_file}")
     logger.info(f"Output: {output_file}")
     logger.info(f"Endpoint: {endpoint}")
     logger.info(f"Model: {model_name}")
+
+    if replication_context:
+        logger.info(f"Replication ID: {replication_context['replication_id']}")
+        logger.info(f"Seed: {replication_context['seed']}")
+        logger.info(f"Shuffle: {replication_context['shuffle']}")
 
     # Load input data
     df = pd.read_csv(input_file)
@@ -160,6 +177,11 @@ def run_experiment(
     if limit:
         df = df.head(limit)
         logger.info(f"Limited to {len(df)} trials")
+
+    # Shuffle trials if replication context requests it
+    if replication_context and replication_context['shuffle']:
+        df = shuffle_trials(df, replication_context['seed'])
+        logger.info(f"Shuffled trials with seed {replication_context['seed']}")
 
     # Initialize client
     config = ExperimentConfig()
@@ -173,9 +195,12 @@ def run_experiment(
 
     # Process trials
     results = []
+    trial_seed = replication_context['seed'] if replication_context else None
+
     for idx, row in tqdm(df.iterrows(), total=len(df), desc="Processing trials"):
         trial = row.to_dict()
-        result, reasoning_info = process_trial(trial, client, model_name)
+        result, reasoning_info = process_trial(trial, client, model_name, seed=trial_seed)
+        result['trial_order_in_replication'] = idx
         results.append(result)
 
         # Write reasoning traces if writer is active
@@ -207,6 +232,16 @@ def run_experiment(
         # Log progress every 10 trials
         if (idx + 1) % 10 == 0:
             logger.info(f"Completed {idx + 1}/{len(df)} trials")
+
+    # Add replication metadata if context exists
+    if replication_context:
+        results = add_replication_metadata(
+            results,
+            replication_context,
+            model_name,
+            "study1_exp1"
+        )
+        logger.info(f"Added replication metadata (seed={replication_context['seed']})")
 
     # Save output as JSON
     output_file.parent.mkdir(parents=True, exist_ok=True)
@@ -274,7 +309,13 @@ def main():
         help='Limit number of trials (for testing)'
     )
 
+    # Add replication arguments
+    add_replication_args(parser)
+
     args = parser.parse_args()
+
+    # Initialize replication context (seed offset=0 for exp1)
+    replication_context = initialize_replication(args, default_seed_offset=0)
 
     run_experiment(
         input_file=args.input,
@@ -283,6 +324,7 @@ def main():
         model_name=args.model_name,
         reasoning_output=args.reasoning_output,
         limit=args.limit,
+        replication_context=replication_context,
     )
 
 

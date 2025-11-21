@@ -70,6 +70,7 @@ class VLLMClient:
         max_tokens: int,
         logprobs: Optional[int] = None,
         stop: Optional[List[str]] = None,
+        seed: Optional[int] = None,
     ) -> Dict:
         """
         Make request to vLLM API with retry logic
@@ -80,6 +81,7 @@ class VLLMClient:
             max_tokens: Maximum tokens to generate
             logprobs: Number of logprobs to return (None for no logprobs)
             stop: Stop sequences
+            seed: Optional random seed for reproducible sampling
 
         Returns:
             API response dictionary
@@ -97,6 +99,9 @@ class VLLMClient:
 
         if stop is not None:
             payload["stop"] = stop
+
+        if seed is not None:
+            payload["seed"] = seed
 
         # Infinite retry logic - never give up on connection errors
         # This allows the script to wait indefinitely for port-forward reconnection
@@ -136,6 +141,7 @@ class VLLMClient:
         temperature: Optional[float] = None,
         max_tokens: Optional[int] = None,
         stop: Optional[List[str]] = None,
+        seed: Optional[int] = None,
         extract_reasoning: bool = True,
         reasoning_start_token: str = "<think>",
         reasoning_end_token: str = "</think>",
@@ -148,6 +154,7 @@ class VLLMClient:
             temperature: Sampling temperature (default: 0.7 from config)
             max_tokens: Maximum tokens (default: 500 from config)
             stop: Stop sequences
+            seed: Optional random seed for reproducible sampling
             extract_reasoning: Whether to extract reasoning traces from text
             reasoning_start_token: Token marking start of reasoning (default: <think>)
             reasoning_end_token: Token marking end of reasoning (default: </think>)
@@ -164,6 +171,7 @@ class VLLMClient:
             max_tokens=tokens,
             logprobs=None,
             stop=stop,
+            seed=seed,
         )
 
         # Extract response
@@ -229,6 +237,7 @@ class VLLMClient:
         prompt: str,
         tokens: List[str],
         temperature: Optional[float] = None,
+        seed: Optional[int] = None,
     ) -> Tuple[Dict[str, float], str]:
         """
         Extract probability distribution over specified token sequences
@@ -241,6 +250,7 @@ class VLLMClient:
             prompt: Input prompt
             tokens: List of token sequences (e.g., ["0%", "10%", ..., "100%"])
             temperature: Sampling temperature (default: 1.0)
+            seed: Optional random seed for reproducible sampling
 
         Returns:
             Tuple of (probability_dict, generated_text)
@@ -253,6 +263,7 @@ class VLLMClient:
             temperature=temp,
             max_tokens=1,
             logprobs=50,  # Request more logprobs to catch all our options
+            seed=seed,
         )
 
         choice = response['choices'][0]
@@ -350,6 +361,7 @@ class VLLMClient:
         prompt: str,
         tokens: List[str],
         temperature: Optional[float] = None,
+        seed: Optional[int] = None,
     ) -> Dict[str, float]:
         """
         Extract binary probability distribution (e.g., "yes"/"no")
@@ -360,6 +372,7 @@ class VLLMClient:
             prompt: Input prompt
             tokens: Two tokens to extract probabilities for (e.g., ["yes", "no"])
             temperature: Sampling temperature
+            seed: Optional random seed for reproducible sampling
 
         Returns:
             Probability distribution over tokens
@@ -367,7 +380,7 @@ class VLLMClient:
         if len(tokens) != 2:
             raise ValueError("Binary extraction requires exactly 2 tokens")
 
-        probs, _ = self.extract_token_probabilities(prompt, tokens, temperature)
+        probs, _ = self.extract_token_probabilities(prompt, tokens, temperature, seed)
         return probs
 
     def close(self):

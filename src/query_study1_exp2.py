@@ -38,6 +38,12 @@ from utils.prompts import (
     get_percentage_values,
     get_yesno_tokens,
 )
+from utils.replication import (
+    add_replication_args,
+    initialize_replication,
+    shuffle_trials,
+    add_replication_metadata,
+)
 
 logging.basicConfig(
     level=logging.INFO,
@@ -155,6 +161,7 @@ def run_experiment(
     is_reasoning_model: bool = False,
     reasoning_start_token: str = "<think>",
     reasoning_end_token: str = "</think>",
+    replication_context: Optional[Dict] = None,
 ):
     """
     Run Study 1 Experiment 2 using direct model scoring
@@ -168,6 +175,7 @@ def run_experiment(
         is_reasoning_model: Whether this is a reasoning model (e.g., DeepSeek-R1)
         reasoning_start_token: Token marking start of reasoning trace
         reasoning_end_token: Token marking end of reasoning trace
+        replication_context: Optional replication context from initialize_replication()
     """
     logger.info(f"Starting Study 1 Experiment 2 (Probability Distributions)")
     logger.info(f"Input: {input_file}")
@@ -175,6 +183,11 @@ def run_experiment(
     logger.info(f"Model path: {model_path}")
     logger.info(f"Model name: {model_name}")
     logger.info(f"Reasoning model: {is_reasoning_model}")
+
+    if replication_context:
+        logger.info(f"Replication ID: {replication_context['replication_id']}")
+        logger.info(f"Seed: {replication_context['seed']}")
+        logger.info(f"Shuffle: {replication_context['shuffle']}")
 
     # Load input data
     df = pd.read_csv(input_file)
@@ -184,6 +197,11 @@ def run_experiment(
     if limit:
         df = df.head(limit)
         logger.info(f"Limited to {len(df)} trials")
+
+    # Shuffle trials if replication context requests it
+    if replication_context and replication_context['shuffle']:
+        df = shuffle_trials(df, replication_context['seed'])
+        logger.info(f"Shuffled trials with seed {replication_context['seed']}")
 
     total_queries = len(df) * 5
     logger.info(f"Total queries to score: {total_queries} (5 per trial)")
@@ -208,12 +226,23 @@ def run_experiment(
     for idx, row in tqdm(df.iterrows(), total=len(df), desc="Processing trials"):
         trial = row.to_dict()
         result = process_trial(trial, scorer, model_name)
+        result['trial_order_in_replication'] = idx
         results.append(result)
 
         # Log progress every 10 trials
         if (idx + 1) % 10 == 0:
             queries_completed = (idx + 1) * 5
             logger.info(f"Completed {idx + 1}/{len(df)} trials ({queries_completed}/{total_queries} queries)")
+
+    # Add replication metadata if context exists
+    if replication_context:
+        results = add_replication_metadata(
+            results,
+            replication_context,
+            model_name,
+            "study1_exp2"
+        )
+        logger.info(f"Added replication metadata (seed={replication_context['seed']})")
 
     # Verify we have all expected fields
     if results:
@@ -293,10 +322,16 @@ def main():
         help='Token marking end of reasoning trace (default: </think>)'
     )
 
+    # Add replication arguments
+    add_replication_args(parser)
+
     args = parser.parse_args()
 
     # Default model_name to model_path if not specified
     model_name = args.model_name or args.model_path
+
+    # Initialize replication context (seed offset=2000 for exp2)
+    replication_context = initialize_replication(args, default_seed_offset=2000)
 
     run_experiment(
         input_file=args.input,
@@ -307,6 +342,7 @@ def main():
         is_reasoning_model=args.reasoning_model,
         reasoning_start_token=args.reasoning_start_token,
         reasoning_end_token=args.reasoning_end_token,
+        replication_context=replication_context,
     )
 
 
