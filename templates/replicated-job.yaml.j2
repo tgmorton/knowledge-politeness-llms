@@ -1,0 +1,239 @@
+# Jinja2 template for replicated experiment jobs
+# Generates Kubernetes Indexed Jobs for running multiple replications
+#
+# Template variables:
+#   - model: Model configuration dict from models.yaml
+#   - model_key: Model key (e.g., "gemma-2b-rtx3090")
+#   - experiment: Experiment name ("study1_exp1", "study1_exp2", "study2_exp1", "study2_exp2")
+#   - num_replications: Number of replications to run
+#   - base_seed: Base random seed (each replication gets base_seed + replication_id)
+#   - image: Docker image tag
+#   - namespace: Kubernetes namespace
+#   - pvcs: PVC names dict {results, model_cache}
+#   - input_data: Input CSV path
+#   - shuffle: Whether to shuffle trial order (true/false)
+#
+# Usage:
+#   python scripts/generate_replicated_jobs.py --model gemma-2b-rtx3090 --experiment study1_exp1 --replications 5
+
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ model_key }}-{{ experiment }}-replicated
+  namespace: {{ namespace }}
+  labels:
+    app: grace-experiments
+    model: {{ model_key }}
+    experiment: {{ experiment }}
+    job-type: replicated
+spec:
+  # Indexed job: each pod gets unique JOB_COMPLETION_INDEX
+  completionMode: Indexed
+  completions: {{ num_replications }}
+  parallelism: {{ model.replication.parallelism }}
+
+  # Keep completed pods for 24 hours for debugging
+  ttlSecondsAfterFinished: 86400
+
+  # Allow 3 retries per replication
+  backoffLimit: 3
+
+  template:
+    metadata:
+      labels:
+        app: grace-experiments
+        model: {{ model_key }}
+        experiment: {{ experiment }}
+    spec:
+      restartPolicy: OnFailure
+
+      # Node selector for specific GPU type
+      nodeSelector:
+        nvidia.com/gpu.product: {{ model.gpu.node_selector }}
+
+      # Tolerations for GPU nodes
+      tolerations:
+        - key: nvidia.com/gpu
+          operator: Exists
+          effect: NoSchedule
+
+      containers:
+      - name: query-runner
+        image: {{ image }}
+        imagePullPolicy: Always
+
+        env:
+        # Replication ID from indexed job
+        - name: REPLICATION_ID
+          value: "$(JOB_COMPLETION_INDEX)"
+
+        # Base seed
+        - name: BASE_SEED
+          value: "{{ base_seed }}"
+
+        # Model name for output metadata
+        - name: MODEL_NAME
+          value: "{{ model_key }}"
+
+        # Experiment name
+        - name: EXPERIMENT_NAME
+          value: "{{ experiment }}"
+
+        # Shuffle flag
+        - name: SHUFFLE
+          value: "{{ shuffle }}"
+
+        # Number of replications (for logging)
+        - name: NUM_REPLICATIONS
+          value: "{{ num_replications }}"
+
+        # HuggingFace token from secret
+        - name: HUGGINGFACE_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: hf-token-thomas
+              key: token
+
+        # Model cache directory (for Exp2 which loads models directly)
+        - name: HF_HOME
+          value: /model-cache
+
+        command: ["/bin/bash", "-c"]
+        args:
+        - |
+          set -e
+
+          echo "========================================"
+          echo "Grace Project - Replicated Experiment"
+          echo "========================================"
+          echo "Model: {{ model_key }}"
+          echo "Experiment: {{ experiment }}"
+          echo "Replication: $REPLICATION_ID / $NUM_REPLICATIONS"
+          echo "Base seed: $BASE_SEED"
+          echo "Shuffle: $SHUFFLE"
+          echo "========================================"
+
+          # Calculate seed for this replication
+          SEED=$((BASE_SEED + REPLICATION_ID))
+          echo "Calculated seed: $SEED"
+
+          # Create output directory for this replication
+          OUTPUT_DIR="/results/{{ model_key }}/replication-${REPLICATION_ID}"
+          mkdir -p "$OUTPUT_DIR"
+          echo "Output directory: $OUTPUT_DIR"
+
+          # Build arguments based on experiment type
+          {% if experiment == "study1_exp1" %}
+          # Study 1 Experiment 1: Raw text responses (uses vLLM server)
+          SCRIPT="src/query_study1_exp1.py"
+          OUTPUT_FILE="${OUTPUT_DIR}/study1_exp1_results.json"
+          REASONING_OUTPUT="${OUTPUT_DIR}/study1_exp1_reasoning.jsonl"
+          EXTRA_ARGS="--endpoint http://{{ model.deployment.service_name }}:8000 --reasoning-output $REASONING_OUTPUT"
+
+          {% elif experiment == "study1_exp2" %}
+          # Study 1 Experiment 2: Probability distributions (direct model scoring)
+          SCRIPT="src/query_study1_exp2.py"
+          OUTPUT_FILE="${OUTPUT_DIR}/study1_exp2_results.json"
+          EXTRA_ARGS="--model-path {{ model.huggingface_name }}"
+          {% if model.get('reasoning_model', false) %}
+          EXTRA_ARGS="$EXTRA_ARGS --reasoning-model --reasoning-start-token '{{ model.reasoning_tokens.start }}' --reasoning-end-token '{{ model.reasoning_tokens.end }}'"
+          {% endif %}
+
+          {% elif experiment == "study2_exp1" %}
+          # Study 2 Experiment 1: Politeness raw responses (uses vLLM server)
+          SCRIPT="src/query_study2_exp1.py"
+          OUTPUT_FILE="${OUTPUT_DIR}/study2_exp1_results.json"
+          EXTRA_ARGS="--endpoint http://{{ model.deployment.service_name }}:8000"
+
+          {% elif experiment == "study2_exp2" %}
+          # Study 2 Experiment 2: Politeness probability distributions (direct model scoring)
+          SCRIPT="src/query_study2_exp2.py"
+          OUTPUT_FILE="${OUTPUT_DIR}/study2_exp2_results.json"
+          EXTRA_ARGS="--model-path {{ model.huggingface_name }}"
+          {% if model.get('reasoning_model', false) %}
+          EXTRA_ARGS="$EXTRA_ARGS --reasoning-model --reasoning-start-token '{{ model.reasoning_tokens.start }}' --reasoning-end-token '{{ model.reasoning_tokens.end }}'"
+          {% endif %}
+
+          {% endif %}
+
+          # Build shuffle arg
+          SHUFFLE_ARG=""
+          if [ "$SHUFFLE" = "true" ]; then
+            SHUFFLE_ARG="--shuffle"
+          fi
+
+          # Log the command
+          echo "Running: python $SCRIPT --input {{ input_data }} --output $OUTPUT_FILE --model-name {{ model_key }} --seed $SEED --replication-id $REPLICATION_ID $SHUFFLE_ARG $EXTRA_ARGS"
+
+          # Run the experiment
+          python "$SCRIPT" \
+            --input {{ input_data }} \
+            --output "$OUTPUT_FILE" \
+            --model-name "{{ model_key }}" \
+            --seed "$SEED" \
+            --replication-id "$REPLICATION_ID" \
+            $SHUFFLE_ARG \
+            $EXTRA_ARGS
+
+          echo "========================================"
+          echo "Replication $REPLICATION_ID complete!"
+          echo "Output: $OUTPUT_FILE"
+          echo "========================================"
+
+        resources:
+          requests:
+            # Exp1 (vLLM client): CPU-only, small memory
+            # Exp2 (direct scoring): Needs GPUs + large memory
+            {% if experiment in ["study1_exp1", "study2_exp1"] %}
+            cpu: "4"
+            memory: 8Gi
+            {% else %}
+            cpu: "{{ model.resources.cpu_request }}"
+            memory: {{ model.resources.memory_request }}
+            nvidia.com/gpu: {{ model.gpu.count }}
+            ephemeral-storage: 20Gi
+            {% endif %}
+          limits:
+            {% if experiment in ["study1_exp1", "study2_exp1"] %}
+            cpu: "4800m"  # 120%
+            memory: 9600Mi  # 120%
+            {% else %}
+            cpu: "{{ model.resources.cpu_limit }}"
+            memory: {{ model.resources.memory_limit }}
+            nvidia.com/gpu: {{ model.gpu.count }}
+            ephemeral-storage: 24Gi
+            {% endif %}
+
+        volumeMounts:
+        - name: results
+          mountPath: /results
+
+        {% if experiment in ["study1_exp2", "study2_exp2"] %}
+        # Exp2 needs model cache for direct scoring
+        - name: model-cache
+          mountPath: /model-cache
+        {% endif %}
+
+        - name: input-data
+          mountPath: /data
+          readOnly: true
+
+      volumes:
+      - name: results
+        persistentVolumeClaim:
+          claimName: {{ pvcs.results }}
+
+      {% if experiment in ["study1_exp2", "study2_exp2"] %}
+      - name: model-cache
+        persistentVolumeClaim:
+          # Use model-specific cache for large models
+          {% if model_key in ["llama-70b-rtx3090", "deepseek-r1-70b-rtx3090"] %}
+          claimName: thomas-grace-{{ model_key.split('-')[0] }}-70b-cache
+          {% else %}
+          claimName: {{ pvcs.model_cache }}
+          {% endif %}
+      {% endif %}
+
+      - name: input-data
+        persistentVolumeClaim:
+          claimName: thomas-grace-input-data
