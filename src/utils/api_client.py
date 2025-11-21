@@ -10,6 +10,7 @@ Provides a wrapper around vLLM's OpenAI-compatible API with:
 import time
 import logging
 import uuid
+import re
 from typing import Dict, List, Optional, Tuple
 from dataclasses import dataclass
 import httpx
@@ -97,28 +98,37 @@ class VLLMClient:
         if stop is not None:
             payload["stop"] = stop
 
-        # Retry logic
-        for attempt in range(self.config.max_retries):
+        # Infinite retry logic - never give up on connection errors
+        # This allows the script to wait indefinitely for port-forward reconnection
+        attempt = 0
+
+        while True:
             try:
                 response = self.client.post(endpoint, json=payload)
                 response.raise_for_status()
                 return response.json()
 
             except httpx.HTTPStatusError as e:
-                logger.error(f"HTTP error on attempt {attempt + 1}: {e}")
-                if attempt < self.config.max_retries - 1:
-                    time.sleep(self.config.retry_delay_seconds)
-                else:
-                    raise
+                # HTTP errors (4xx, 5xx) are not retried - these are real errors
+                logger.error(f"HTTP error: {e}")
+                raise
 
             except httpx.RequestError as e:
-                logger.error(f"Request error on attempt {attempt + 1}: {e}")
-                if attempt < self.config.max_retries - 1:
-                    time.sleep(self.config.retry_delay_seconds)
-                else:
-                    raise
+                # Connection errors are common with port-forward drops
+                # We retry these indefinitely
+                if attempt == 0:
+                    logger.warning(f"Connection lost to {self.base_url}")
+                    logger.warning("Waiting for port-forward reconnection...")
+                    logger.warning("Script will continue retrying - it will not give up!")
 
-        raise RuntimeError(f"Failed after {self.config.max_retries} retries")
+                # Use exponential backoff with cap
+                # Cap the exponent calculation to prevent overflow
+                delay = min(self.config.retry_delay_seconds * (1.5 ** min(attempt, 20)), 60)
+
+                logger.info(f"Connection attempt {attempt + 1} failed, retrying in {delay:.1f}s...")
+                time.sleep(delay)
+                attempt += 1
+                # Continue forever - no break condition
 
     def generate_text(
         self,
@@ -126,6 +136,9 @@ class VLLMClient:
         temperature: Optional[float] = None,
         max_tokens: Optional[int] = None,
         stop: Optional[List[str]] = None,
+        extract_reasoning: bool = True,
+        reasoning_start_token: str = "<think>",
+        reasoning_end_token: str = "</think>",
     ) -> CompletionResponse:
         """
         Generate text completion (Experiment 1 - raw text responses)
@@ -135,9 +148,12 @@ class VLLMClient:
             temperature: Sampling temperature (default: 0.7 from config)
             max_tokens: Maximum tokens (default: 500 from config)
             stop: Stop sequences
+            extract_reasoning: Whether to extract reasoning traces from text
+            reasoning_start_token: Token marking start of reasoning (default: <think>)
+            reasoning_end_token: Token marking end of reasoning (default: </think>)
 
         Returns:
-            CompletionResponse with generated text
+            CompletionResponse with generated text and extracted reasoning trace
         """
         temp = temperature if temperature is not None else self.config.temp_text_generation
         tokens = max_tokens if max_tokens is not None else self.config.max_tokens_text
@@ -152,12 +168,13 @@ class VLLMClient:
 
         # Extract response
         choice = response['choices'][0]
+        generated_text = choice['text'].strip()
 
         # Generate unique result ID
         result_id = str(uuid.uuid4())
 
         # Extract reasoning trace if available (for thinking models)
-        # Some models return reasoning in a separate field
+        # Try separate field first (some APIs return reasoning separately)
         reasoning_trace = None
         if 'reasoning' in choice:
             reasoning_trace = choice['reasoning']
@@ -166,13 +183,46 @@ class VLLMClient:
         elif 'chain_of_thought' in choice:
             reasoning_trace = choice['chain_of_thought']
 
+        # If no separate field and extract_reasoning is True, parse from text
+        if reasoning_trace is None and extract_reasoning:
+            reasoning_trace = self._extract_reasoning_from_text(
+                generated_text, reasoning_start_token, reasoning_end_token
+            )
+
         return CompletionResponse(
-            text=choice['text'].strip(),
+            text=generated_text,
             finish_reason=choice.get('finish_reason'),
             usage=response.get('usage'),
             reasoning_trace=reasoning_trace,
             result_id=result_id,
         )
+
+    def _extract_reasoning_from_text(
+        self, text: str, start_token: str, end_token: str
+    ) -> Optional[str]:
+        """
+        Extract reasoning trace from text with reasoning tags
+
+        For reasoning models like DeepSeek-R1, reasoning is embedded in the
+        generated text within special tags (e.g., <think>...</think>).
+
+        Args:
+            text: Generated text
+            start_token: Token marking start of reasoning
+            end_token: Token marking end of reasoning
+
+        Returns:
+            Extracted reasoning trace or None if not found
+        """
+        pattern = re.escape(start_token) + r'(.*?)' + re.escape(end_token)
+        match = re.search(pattern, text, re.DOTALL)
+
+        if match:
+            reasoning = match.group(1).strip()
+            logger.debug(f"Extracted reasoning trace ({len(reasoning)} chars)")
+            return reasoning
+
+        return None
 
     def extract_token_probabilities(
         self,
@@ -181,57 +231,98 @@ class VLLMClient:
         temperature: Optional[float] = None,
     ) -> Tuple[Dict[str, float], str]:
         """
-        Extract probability distribution over specified tokens (Experiment 2)
+        Extract probability distribution over specified token sequences
 
-        This is the KEY method for Study 1 Experiment 2 probability extraction.
+        NEW APPROACH: Get logprobs for the first token in each option by examining
+        what the model would generate. We look at logprobs for the top-k tokens
+        and match against our target sequences.
 
         Args:
-            prompt: Input prompt (e.g., "What % probability do you assign that exactly 2 exams passed?")
-            tokens: List of tokens to extract probabilities for (e.g., ["0%", "10%", ..., "100%"])
-            temperature: Sampling temperature (default: 1.0 from config)
+            prompt: Input prompt
+            tokens: List of token sequences (e.g., ["0%", "10%", ..., "100%"])
+            temperature: Sampling temperature (default: 1.0)
 
         Returns:
-            Tuple of (probability_dict, generated_token)
-            - probability_dict: Maps each token to its probability
-            - generated_token: The token that was actually sampled
+            Tuple of (probability_dict, generated_text)
         """
         temp = temperature if temperature is not None else self.config.temp_probabilities
 
+        # Generate 1 token to get logprobs for what comes next
         response = self._make_request(
             prompt=prompt,
             temperature=temp,
-            max_tokens=1,  # Single token for probability extraction
-            logprobs=self.config.logprobs_count,
+            max_tokens=1,
+            logprobs=50,  # Request more logprobs to catch all our options
         )
 
-        # Extract logprobs
         choice = response['choices'][0]
-        generated_token = choice['text'].strip()
+        generated_text = choice['text'].strip()
 
-        # Get top logprobs for first (and only) token
         if 'logprobs' not in choice or not choice['logprobs']:
             raise ValueError("No logprobs returned from API")
 
-        # vLLM returns logprobs as a dict: {token: logprob, ...}
-        token_logprobs = choice['logprobs'].get('top_logprobs', [{}])[0]
+        # Get first token's logprobs
+        top_logprobs = choice['logprobs'].get('top_logprobs', [{}])[0]
 
-        # Extract logprobs for requested tokens
+        # For each option, find its logprob in the returned logprobs
         logprobs_dict = {}
-        for token in tokens:
-            # Try exact match first
-            if token in token_logprobs:
-                logprobs_dict[token] = token_logprobs[token]
-            # Try with leading space (vLLM tokenization)
-            elif f" {token}" in token_logprobs:
-                logprobs_dict[token] = token_logprobs[f" {token}"]
-            else:
-                # Token not in top logprobs, assign very low probability
-                logprobs_dict[token] = -20.0  # exp(-20) ≈ 2e-9
+        for option in tokens:
+            logprob = self._find_option_logprob(option, top_logprobs)
+            logprobs_dict[option] = logprob
 
-        # Convert logprobs to probabilities and normalize
+        # Normalize to get probability distribution
         probs = self._normalize_logprobs(logprobs_dict)
 
-        return probs, generated_token
+        return probs, generated_text
+
+    def _find_option_logprob(self, option: str, top_logprobs: Dict[str, float]) -> float:
+        """
+        Find logprob for an option in the top_logprobs dict
+
+        Tries multiple variations to handle tokenization differences:
+        - Exact match: "10%"
+        - With space: " 10%"
+        - First token only: "10" (if "10%" isn't found)
+        - With space + first token: " 10"
+
+        Args:
+            option: Target sequence (e.g., "10%")
+            top_logprobs: Dict of {token: logprob}
+
+        Returns:
+            Log probability for this option
+        """
+        # Try exact match
+        if option in top_logprobs:
+            return top_logprobs[option]
+
+        # Try with leading space
+        if f" {option}" in top_logprobs:
+            return top_logprobs[f" {option}"]
+
+        # If option contains %, try just the number part
+        if '%' in option:
+            number_part = option.replace('%', '')
+
+            # Try number without space
+            if number_part in top_logprobs:
+                return top_logprobs[number_part]
+
+            # Try number with space
+            if f" {number_part}" in top_logprobs:
+                return top_logprobs[f" {number_part}"]
+
+        # Try without leading/trailing whitespace
+        option_stripped = option.strip()
+        if option_stripped in top_logprobs:
+            return top_logprobs[option_stripped]
+
+        if f" {option_stripped}" in top_logprobs:
+            return top_logprobs[f" {option_stripped}"]
+
+        # Not found - assign very low probability
+        logger.warning(f"Option '{option}' not found in top_logprobs. Available tokens: {list(top_logprobs.keys())[:10]}")
+        return -20.0
 
     def _normalize_logprobs(self, logprobs_dict: Dict[str, float]) -> Dict[str, float]:
         """

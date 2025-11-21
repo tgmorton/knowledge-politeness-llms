@@ -10,7 +10,7 @@ For each trial in study1.csv, generates 5 separate queries:
 
 For each query, extracts probability distribution from logprobs.
 
-Output: 68-column CSV with:
+Output: JSON array with:
 - 9 original columns (8 from study1.csv + model_name)
 - 44 probability columns (state{0-3}_prob_{0,10,20,...,100})
 - 12 summary statistics (state{0-3}_{mean,std,entropy})
@@ -19,6 +19,7 @@ Output: 68-column CSV with:
 
 import argparse
 import logging
+import json
 import os
 from pathlib import Path
 from typing import Dict, List
@@ -151,6 +152,9 @@ def run_experiment(
     model_path: str,
     model_name: str,
     limit: int = None,
+    is_reasoning_model: bool = False,
+    reasoning_start_token: str = "<think>",
+    reasoning_end_token: str = "</think>",
 ):
     """
     Run Study 1 Experiment 2 using direct model scoring
@@ -161,12 +165,16 @@ def run_experiment(
         model_path: HuggingFace model path (e.g., "google/gemma-2-2b-it")
         model_name: Name of model for output metadata
         limit: Optional limit on number of trials (for testing)
+        is_reasoning_model: Whether this is a reasoning model (e.g., DeepSeek-R1)
+        reasoning_start_token: Token marking start of reasoning trace
+        reasoning_end_token: Token marking end of reasoning trace
     """
     logger.info(f"Starting Study 1 Experiment 2 (Probability Distributions)")
     logger.info(f"Input: {input_file}")
     logger.info(f"Output: {output_file}")
     logger.info(f"Model path: {model_path}")
     logger.info(f"Model name: {model_name}")
+    logger.info(f"Reasoning model: {is_reasoning_model}")
 
     # Load input data
     df = pd.read_csv(input_file)
@@ -187,7 +195,13 @@ def run_experiment(
         logger.info(f"Using model cache: {cache_dir}")
 
     logger.info("Loading model for direct scoring...")
-    scorer = ModelScorer(model_name=model_path, cache_dir=cache_dir)
+    scorer = ModelScorer(
+        model_name=model_path,
+        cache_dir=cache_dir,
+        is_reasoning_model=is_reasoning_model,
+        reasoning_start_token=reasoning_start_token,
+        reasoning_end_token=reasoning_end_token,
+    )
 
     # Process trials
     results = []
@@ -201,16 +215,16 @@ def run_experiment(
             queries_completed = (idx + 1) * 5
             logger.info(f"Completed {idx + 1}/{len(df)} trials ({queries_completed}/{total_queries} queries)")
 
-    # Convert to DataFrame
-    results_df = pd.DataFrame(results)
+    # Verify we have all expected fields
+    if results:
+        num_keys = len(results[0].keys())
+        logger.info(f"Output has {num_keys} fields (expected 68)")
 
-    # Verify column count
-    logger.info(f"Output has {len(results_df.columns)} columns (expected 68)")
-
-    # Save output
+    # Save output as JSON
     output_file.parent.mkdir(parents=True, exist_ok=True)
-    results_df.to_csv(output_file, index=False)
-    logger.info(f"Saved results to {output_file}")
+    with open(output_file, 'w') as f:
+        json.dump(results, f, indent=2, default=str)
+    logger.info(f"Saved {len(results)} results to {output_file}")
 
     # Validate output
     logger.info("Validating output...")
@@ -261,6 +275,23 @@ def main():
         default=None,
         help='Limit number of trials (for testing)'
     )
+    parser.add_argument(
+        '--reasoning-model',
+        action='store_true',
+        help='Whether this is a reasoning model (e.g., DeepSeek-R1)'
+    )
+    parser.add_argument(
+        '--reasoning-start-token',
+        type=str,
+        default='<think>',
+        help='Token marking start of reasoning trace (default: <think>)'
+    )
+    parser.add_argument(
+        '--reasoning-end-token',
+        type=str,
+        default='</think>',
+        help='Token marking end of reasoning trace (default: </think>)'
+    )
 
     args = parser.parse_args()
 
@@ -273,6 +304,9 @@ def main():
         model_path=args.model_path,
         model_name=model_name,
         limit=args.limit,
+        is_reasoning_model=args.reasoning_model,
+        reasoning_start_token=args.reasoning_start_token,
+        reasoning_end_token=args.reasoning_end_token,
     )
 
 

@@ -29,10 +29,11 @@ Usage:
 """
 
 import logging
-from typing import Dict, List
+from typing import Dict, List, Optional, Tuple
 import torch
 from transformers import AutoTokenizer, AutoModelForCausalLM
 import numpy as np
+import re
 
 logger = logging.getLogger(__name__)
 
@@ -50,6 +51,9 @@ class ModelScorer:
         cache_dir: str = None,
         device: str = "auto",
         torch_dtype: str = "auto",
+        is_reasoning_model: bool = False,
+        reasoning_start_token: str = "<think>",
+        reasoning_end_token: str = "</think>",
     ):
         """
         Initialize model scorer
@@ -59,9 +63,15 @@ class ModelScorer:
             cache_dir: Directory to cache downloaded models (e.g., "/models/.cache")
             device: Device to use ("cpu", "cuda", "mps", or "auto")
             torch_dtype: Torch dtype ("float16", "float32", "bfloat16", or "auto")
+            is_reasoning_model: Whether this is a reasoning model (e.g., DeepSeek-R1)
+            reasoning_start_token: Token marking start of reasoning trace
+            reasoning_end_token: Token marking end of reasoning trace
         """
         self.model_name = model_name
         self.cache_dir = cache_dir
+        self.is_reasoning_model = is_reasoning_model
+        self.reasoning_start_token = reasoning_start_token
+        self.reasoning_end_token = reasoning_end_token
 
         if cache_dir:
             logger.info(f"Loading model: {model_name} (cache: {cache_dir})")
@@ -222,6 +232,214 @@ class ModelScorer:
         probabilities = exp_values / np.sum(exp_values)
 
         return {opt: float(prob) for opt, prob in zip(options, probabilities)}
+
+    def generate_with_reasoning(
+        self,
+        prompt: str,
+        max_new_tokens: int = 512,
+        temperature: float = 0.7,
+        return_logprobs: bool = False,
+    ) -> Dict:
+        """
+        Generate text and extract reasoning traces (for reasoning models)
+
+        For reasoning models like DeepSeek-R1, this extracts:
+        - Reasoning trace (text within <think>...</think>)
+        - Final answer (text outside reasoning tags)
+        - Token-level logprobs (if requested)
+
+        Args:
+            prompt: Input prompt
+            max_new_tokens: Maximum tokens to generate
+            temperature: Sampling temperature (0.0 = greedy)
+            return_logprobs: Whether to return token-level logprobs
+
+        Returns:
+            Dictionary with:
+                - full_text: Complete generated text
+                - reasoning_trace: Text within reasoning tags (or None)
+                - final_answer: Text outside reasoning tags
+                - reasoning_logprobs: List of (token, logprob) for reasoning (if requested)
+                - answer_logprobs: List of (token, logprob) for answer (if requested)
+        """
+        # Tokenize prompt
+        inputs = self.tokenizer(prompt, return_tensors="pt")
+        inputs = {k: v.to(self.device) for k, v in inputs.items()}
+
+        prompt_len = inputs['input_ids'].shape[1]
+
+        # Generate with logprobs if requested
+        with torch.no_grad():
+            if return_logprobs:
+                # Generate tokens one by one to capture logprobs
+                generated_tokens = []
+                generated_logprobs = []
+
+                input_ids = inputs['input_ids']
+
+                for _ in range(max_new_tokens):
+                    outputs = self.model(input_ids)
+                    logits = outputs.logits[:, -1, :]
+
+                    # Apply temperature
+                    if temperature > 0:
+                        logits = logits / temperature
+
+                    # Get log probabilities
+                    log_probs = torch.nn.functional.log_softmax(logits, dim=-1)
+
+                    # Sample or greedy
+                    if temperature == 0:
+                        next_token = torch.argmax(logits, dim=-1)
+                    else:
+                        probs = torch.softmax(logits, dim=-1)
+                        next_token = torch.multinomial(probs, num_samples=1).squeeze()
+
+                    # Get logprob of selected token
+                    token_logprob = log_probs[0, next_token].item()
+
+                    # Append token and logprob
+                    generated_tokens.append(next_token.item())
+                    generated_logprobs.append(token_logprob)
+
+                    # Check for EOS
+                    if next_token.item() == self.tokenizer.eos_token_id:
+                        break
+
+                    # Append to input for next iteration
+                    input_ids = torch.cat([input_ids, next_token.unsqueeze(0).unsqueeze(0)], dim=1)
+
+                # Decode generated text
+                full_text = self.tokenizer.decode(generated_tokens, skip_special_tokens=False)
+
+                # Decode individual tokens for logprob mapping
+                token_texts = [self.tokenizer.decode([t], skip_special_tokens=False) for t in generated_tokens]
+
+            else:
+                # Simple generation without logprobs
+                outputs = self.model.generate(
+                    **inputs,
+                    max_new_tokens=max_new_tokens,
+                    temperature=temperature if temperature > 0 else 1.0,
+                    do_sample=temperature > 0,
+                    pad_token_id=self.tokenizer.eos_token_id,
+                )
+
+                # Decode only the generated part (exclude prompt)
+                generated_ids = outputs[0, prompt_len:]
+                full_text = self.tokenizer.decode(generated_ids, skip_special_tokens=False)
+                token_texts = []
+                generated_logprobs = []
+
+        # Parse reasoning trace if this is a reasoning model
+        if self.is_reasoning_model:
+            reasoning_trace, final_answer = self._parse_reasoning(full_text)
+
+            if return_logprobs and token_texts:
+                # Split logprobs into reasoning and answer
+                reasoning_logprobs, answer_logprobs = self._split_logprobs(
+                    token_texts, generated_logprobs, reasoning_trace, final_answer
+                )
+            else:
+                reasoning_logprobs = []
+                answer_logprobs = []
+        else:
+            reasoning_trace = None
+            final_answer = full_text
+            reasoning_logprobs = []
+            answer_logprobs = list(zip(token_texts, generated_logprobs)) if return_logprobs else []
+
+        return {
+            'full_text': full_text,
+            'reasoning_trace': reasoning_trace,
+            'final_answer': final_answer,
+            'reasoning_logprobs': reasoning_logprobs,
+            'answer_logprobs': answer_logprobs,
+        }
+
+    def _parse_reasoning(self, text: str) -> Tuple[Optional[str], str]:
+        """
+        Parse reasoning trace from generated text
+
+        Extracts text within reasoning tags (e.g., <think>...</think>)
+        and returns final answer (text outside tags).
+
+        Args:
+            text: Generated text potentially containing reasoning tags
+
+        Returns:
+            Tuple of (reasoning_trace, final_answer)
+        """
+        # Find reasoning trace
+        pattern = re.escape(self.reasoning_start_token) + r'(.*?)' + re.escape(self.reasoning_end_token)
+        match = re.search(pattern, text, re.DOTALL)
+
+        if match:
+            reasoning_trace = match.group(1).strip()
+            # Remove reasoning tags from text to get final answer
+            final_answer = re.sub(pattern, '', text, flags=re.DOTALL).strip()
+        else:
+            reasoning_trace = None
+            final_answer = text.strip()
+
+        return reasoning_trace, final_answer
+
+    def _split_logprobs(
+        self,
+        token_texts: List[str],
+        logprobs: List[float],
+        reasoning_trace: Optional[str],
+        final_answer: str,
+    ) -> Tuple[List[Tuple[str, float]], List[Tuple[str, float]]]:
+        """
+        Split token-level logprobs into reasoning and answer sections
+
+        Args:
+            token_texts: List of decoded token strings
+            logprobs: List of logprob values (same length as token_texts)
+            reasoning_trace: Extracted reasoning text (or None)
+            final_answer: Extracted final answer text
+
+        Returns:
+            Tuple of (reasoning_logprobs, answer_logprobs)
+            Each is a list of (token, logprob) tuples
+        """
+        if not reasoning_trace:
+            # No reasoning trace, all tokens are answer
+            return [], list(zip(token_texts, logprobs))
+
+        # Reconstruct full text to find boundaries
+        full_text = ''.join(token_texts)
+
+        # Find where reasoning starts and ends
+        start_idx = full_text.find(self.reasoning_start_token)
+        end_idx = full_text.find(self.reasoning_end_token)
+
+        if start_idx == -1 or end_idx == -1:
+            # Couldn't find tags, return everything as answer
+            logger.warning("Could not find reasoning tags in token stream")
+            return [], list(zip(token_texts, logprobs))
+
+        # Accumulate character positions to determine which tokens belong where
+        reasoning_logprobs = []
+        answer_logprobs = []
+
+        char_pos = 0
+        for token, logprob in zip(token_texts, logprobs):
+            token_end = char_pos + len(token)
+
+            # Determine if this token is in reasoning section
+            # (between start_idx and end_idx + len(end_token))
+            if start_idx <= char_pos < end_idx + len(self.reasoning_end_token):
+                # Skip the tag tokens themselves, only keep reasoning content
+                if token not in [self.reasoning_start_token, self.reasoning_end_token]:
+                    reasoning_logprobs.append((token, logprob))
+            else:
+                answer_logprobs.append((token, logprob))
+
+            char_pos = token_end
+
+        return reasoning_logprobs, answer_logprobs
 
     def close(self):
         """

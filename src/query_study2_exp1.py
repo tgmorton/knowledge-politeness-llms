@@ -13,11 +13,12 @@ For each trial in study2.csv:
 - Ask model to judge the response
 - Save raw text judgment
 
-Expected output: CSV with original columns + response, model_name, timestamp
+Expected output: JSON array with original columns + response, model_name, timestamp
 """
 
 import argparse
 import logging
+import json
 from pathlib import Path
 from datetime import datetime
 from typing import Dict
@@ -27,6 +28,8 @@ from tqdm import tqdm
 from utils.api_client import VLLMClient
 from utils.config import ExperimentConfig
 from utils.validation import validate_study2_exp1
+from utils.model_config import get_model_config
+from utils.prompts import construct_study2_exp1_prompt
 
 logging.basicConfig(
     level=logging.INFO,
@@ -35,41 +38,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-def construct_prompt(trial: Dict) -> str:
-    """
-    Construct prompt for Study 2 Experiment 1
-
-    Format:
-    Present the scenario, utterance, goal, and state
-    Ask for a judgment of the response
-
-    Args:
-        trial: Dictionary with trial data from study2.csv
-
-    Returns:
-        Formatted prompt string
-    """
-    precontext = trial['Precontext'].strip()
-    scenario = trial['Scenario'].strip()
-    utterance = trial['Utterance'].strip()
-    goal = trial['Goal'].strip()
-    state = trial['State'].strip()
-
-    prompt = f"""{precontext}
-
-{scenario}
-
-{trial['SP_Name']} responds: "{utterance}"
-
-Context:
-- {goal}
-- The quality of {trial['LS_Name']}'s work is: {state}
-
-How would you characterize {trial['SP_Name']}'s response? Was it appropriate given the context?
-
-Please provide your judgment and reasoning."""
-
-    return prompt
+# Prompt construction moved to utils.prompts for consistency across all scripts
 
 
 def process_trial(
@@ -88,12 +57,21 @@ def process_trial(
     Returns:
         Trial data with response added
     """
-    # Construct prompt
-    prompt = construct_prompt(trial)
+    # Get model config
+    model_config = get_model_config(model_name)
 
-    # Query model
+    # Construct prompt using shared library
+    prompt = construct_study2_exp1_prompt(trial, model_name)
+
+    # Query model with model-specific parameters
+    # Use max_tokens_structured for constrained format responses
     try:
-        response = client.generate_text(prompt)
+        response = client.generate_text(
+            prompt,
+            temperature=model_config.temperature_text,
+            max_tokens=model_config.max_tokens_structured,
+            stop=model_config.stop_tokens,
+        )
         response_text = response.text
     except Exception as e:
         logger.error(f"Error querying model for trial: {e}")
@@ -155,13 +133,11 @@ def run_experiment(
         if (idx + 1) % 100 == 0:
             logger.info(f"Completed {idx + 1}/{len(df)} trials")
 
-    # Convert to DataFrame
-    results_df = pd.DataFrame(results)
-
-    # Save output
+    # Save output as JSON
     output_file.parent.mkdir(parents=True, exist_ok=True)
-    results_df.to_csv(output_file, index=False)
-    logger.info(f"Saved results to {output_file}")
+    with open(output_file, 'w') as f:
+        json.dump(results, f, indent=2, default=str)
+    logger.info(f"Saved {len(results)} results to {output_file}")
 
     # Validate output
     logger.info("Validating output...")

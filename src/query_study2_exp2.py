@@ -11,11 +11,12 @@ Example queries:
 - "Was the response appropriate or inappropriate?"
 - "How would you rate the response quality?" (good/neutral/bad)
 
-Output: CSV with original columns + probability distributions
+Output: JSON array with original columns + probability distributions
 """
 
 import argparse
 import logging
+import json
 import os
 from pathlib import Path
 from typing import Dict
@@ -130,6 +131,9 @@ def run_experiment(
     model_path: str,
     model_name: str,
     limit: int = None,
+    is_reasoning_model: bool = False,
+    reasoning_start_token: str = "<think>",
+    reasoning_end_token: str = "</think>",
 ):
     """
     Run Study 2 Experiment 2 using direct model scoring
@@ -140,12 +144,16 @@ def run_experiment(
         model_path: HuggingFace model path
         model_name: Name of model for output metadata
         limit: Optional limit on number of trials (for testing)
+        is_reasoning_model: Whether this is a reasoning model (e.g., DeepSeek-R1)
+        reasoning_start_token: Token marking start of reasoning trace
+        reasoning_end_token: Token marking end of reasoning trace
     """
     logger.info(f"Starting Study 2 Experiment 2 (Probability Distributions)")
     logger.info(f"Input: {input_file}")
     logger.info(f"Output: {output_file}")
     logger.info(f"Model path: {model_path}")
     logger.info(f"Model name: {model_name}")
+    logger.info(f"Reasoning model: {is_reasoning_model}")
 
     # Load input data
     df = pd.read_csv(input_file)
@@ -165,7 +173,13 @@ def run_experiment(
         logger.info(f"Using model cache: {cache_dir}")
 
     logger.info("Loading model for direct scoring...")
-    scorer = ModelScorer(model_name=model_path, cache_dir=cache_dir)
+    scorer = ModelScorer(
+        model_name=model_path,
+        cache_dir=cache_dir,
+        is_reasoning_model=is_reasoning_model,
+        reasoning_start_token=reasoning_start_token,
+        reasoning_end_token=reasoning_end_token,
+    )
 
     # Process trials
     results = []
@@ -178,15 +192,16 @@ def run_experiment(
         if (idx + 1) % 100 == 0:
             logger.info(f"Completed {idx + 1}/{len(df)} trials")
 
-    # Convert to DataFrame
-    results_df = pd.DataFrame(results)
+    # Check fields if we have results
+    if results:
+        num_keys = len(results[0].keys())
+        logger.info(f"Output has {num_keys} fields")
 
-    logger.info(f"Output has {len(results_df.columns)} columns")
-
-    # Save output
+    # Save output as JSON
     output_file.parent.mkdir(parents=True, exist_ok=True)
-    results_df.to_csv(output_file, index=False)
-    logger.info(f"Saved results to {output_file}")
+    with open(output_file, 'w') as f:
+        json.dump(results, f, indent=2, default=str)
+    logger.info(f"Saved {len(results)} results to {output_file}")
 
     # Note: Validation for Study 2 Exp 2 not yet implemented in validation.py
     logger.info("Note: Formal validation not yet implemented for Study 2 Exp 2")
@@ -231,6 +246,23 @@ def main():
         default=None,
         help='Limit number of trials (for testing)'
     )
+    parser.add_argument(
+        '--reasoning-model',
+        action='store_true',
+        help='Whether this is a reasoning model (e.g., DeepSeek-R1)'
+    )
+    parser.add_argument(
+        '--reasoning-start-token',
+        type=str,
+        default='<think>',
+        help='Token marking start of reasoning trace (default: <think>)'
+    )
+    parser.add_argument(
+        '--reasoning-end-token',
+        type=str,
+        default='</think>',
+        help='Token marking end of reasoning trace (default: </think>)'
+    )
 
     args = parser.parse_args()
 
@@ -243,6 +275,9 @@ def main():
         model_path=args.model_path,
         model_name=model_name,
         limit=args.limit,
+        is_reasoning_model=args.reasoning_model,
+        reasoning_start_token=args.reasoning_start_token,
+        reasoning_end_token=args.reasoning_end_token,
     )
 
 
