@@ -22,7 +22,7 @@ import logging
 import json
 import os
 from pathlib import Path
-from typing import Dict, List
+from typing import Dict, List, Optional
 import pandas as pd
 import numpy as np
 from tqdm import tqdm

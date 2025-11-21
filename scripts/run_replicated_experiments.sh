@@ -231,8 +231,8 @@ if [ "$NEEDS_VLLM" = true ] && [ "$DEPLOY_VLLM" = true ]; then
     else
         # Generate deployment from models.yaml using existing script
         if [ -f "scripts/generate_manifests.py" ]; then
-            python scripts/generate_manifests.py --model "$MODEL" --type deployment
-            DEPLOYMENT_MANIFEST=$(find kubernetes/deployments -name "deployment-${MODEL}.yaml" -type f -mmin -1 | head -1)
+            python scripts/generate_manifests.py --model "$MODEL" --deployments-only
+            DEPLOYMENT_MANIFEST=$(find kubernetes/generated -name "deployment-${MODEL}.yaml" -type f -mmin -1 | head -1)
 
             if [ -f "$DEPLOYMENT_MANIFEST" ]; then
                 kubectl apply -f "$DEPLOYMENT_MANIFEST" -n "$NAMESPACE"

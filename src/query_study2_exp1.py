@@ -21,7 +21,7 @@ import logging
 import json
 from pathlib import Path
 from datetime import datetime
-from typing import Dict
+from typing import Dict, Optional
 import pandas as pd
 from tqdm import tqdm
 

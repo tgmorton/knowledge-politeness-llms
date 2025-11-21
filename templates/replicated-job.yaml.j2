@@ -98,6 +98,10 @@ spec:
         - name: HF_HOME
           value: /model-cache
 
+        # Python path for imports
+        - name: PYTHONPATH
+          value: /code:/code/venv/lib
+
         command: ["/bin/bash", "-c"]
         args:
         - |
@@ -125,14 +129,14 @@ spec:
           # Build arguments based on experiment type
           {% if experiment == "study1_exp1" %}
           # Study 1 Experiment 1: Raw text responses (uses vLLM server)
-          SCRIPT="src/query_study1_exp1.py"
+          SCRIPT="/code/src/query_study1_exp1.py"
           OUTPUT_FILE="${OUTPUT_DIR}/study1_exp1_results.json"
           REASONING_OUTPUT="${OUTPUT_DIR}/study1_exp1_reasoning.jsonl"
           EXTRA_ARGS="--endpoint http://{{ model.deployment.service_name }}:8000 --reasoning-output $REASONING_OUTPUT"
 
           {% elif experiment == "study1_exp2" %}
           # Study 1 Experiment 2: Probability distributions (direct model scoring)
-          SCRIPT="src/query_study1_exp2.py"
+          SCRIPT="/code/src/query_study1_exp2.py"
           OUTPUT_FILE="${OUTPUT_DIR}/study1_exp2_results.json"
           EXTRA_ARGS="--model-path {{ model.huggingface_name }}"
           {% if model.get('reasoning_model', false) %}
@@ -141,13 +145,13 @@ spec:
 
           {% elif experiment == "study2_exp1" %}
           # Study 2 Experiment 1: Politeness raw responses (uses vLLM server)
-          SCRIPT="src/query_study2_exp1.py"
+          SCRIPT="/code/src/query_study2_exp1.py"
           OUTPUT_FILE="${OUTPUT_DIR}/study2_exp1_results.json"
           EXTRA_ARGS="--endpoint http://{{ model.deployment.service_name }}:8000"
 
           {% elif experiment == "study2_exp2" %}
           # Study 2 Experiment 2: Politeness probability distributions (direct model scoring)
-          SCRIPT="src/query_study2_exp2.py"
+          SCRIPT="/code/src/query_study2_exp2.py"
           OUTPUT_FILE="${OUTPUT_DIR}/study2_exp2_results.json"
           EXTRA_ARGS="--model-path {{ model.huggingface_name }}"
           {% if model.get('reasoning_model', false) %}
@@ -163,13 +167,13 @@ spec:
           fi
 
           # Log the command
-          echo "Running: python $SCRIPT --input {{ input_data }} --output $OUTPUT_FILE --model-name {{ model_key }} --seed $SEED --replication-id $REPLICATION_ID $SHUFFLE_ARG $EXTRA_ARGS"
+          echo "Running: python $SCRIPT --input {{ input_data }} --output $OUTPUT_FILE --model-name {{ model.huggingface_name }} --seed $SEED --replication-id $REPLICATION_ID $SHUFFLE_ARG $EXTRA_ARGS"
 
           # Run the experiment
           python "$SCRIPT" \
             --input {{ input_data }} \
             --output "$OUTPUT_FILE" \
-            --model-name "{{ model_key }}" \
+            --model-name "{{ model.huggingface_name }}" \
             --seed "$SEED" \
             --replication-id "$REPLICATION_ID" \
             $SHUFFLE_ARG \
@@ -205,6 +209,10 @@ spec:
             {% endif %}
 
         volumeMounts:
+        - name: code
+          mountPath: /code
+          readOnly: true
+
         - name: results
           mountPath: /results
 
@@ -214,11 +222,11 @@ spec:
           mountPath: /model-cache
         {% endif %}
 
-        - name: input-data
-          mountPath: /data
-          readOnly: true
-
       volumes:
+      - name: code
+        persistentVolumeClaim:
+          claimName: grace-code
+
       - name: results
         persistentVolumeClaim:
           claimName: {{ pvcs.results }}
@@ -233,7 +241,3 @@ spec:
           claimName: {{ pvcs.model_cache }}
           {% endif %}
       {% endif %}
-
-      - name: input-data
-        persistentVolumeClaim:
-          claimName: thomas-grace-input-data
