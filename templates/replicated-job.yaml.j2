@@ -65,7 +65,9 @@ spec:
         env:
         # Replication ID from indexed job
         - name: REPLICATION_ID
-          value: "$(JOB_COMPLETION_INDEX)"
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.annotations['batch.kubernetes.io/job-completion-index']
 
         # Base seed
         - name: BASE_SEED
