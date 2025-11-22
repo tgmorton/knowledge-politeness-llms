@@ -92,7 +92,7 @@ spec:
           valueFrom:
             secretKeyRef:
               name: hf-token-thomas
-              key: token
+              key: HF_TOKEN
 
         # Model cache directory (for Exp2 which loads models directly)
         - name: HF_HOME
