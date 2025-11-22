@@ -121,8 +121,15 @@ spec:
           SEED=$((BASE_SEED + REPLICATION_ID))
           echo "Calculated seed: $SEED"
 
-          # Install dependencies to container (NOT to CephFS - NRP policy)
+          # Clone source code from GitHub
           echo ""
+          echo "Cloning source code from GitHub..."
+          apt-get update -qq && apt-get install -y -qq git > /dev/null
+          git clone https://github.com/tgmorton/knowledge-politeness-llms.git /tmp/grace-project
+          echo "✓ Code cloned to /tmp/grace-project"
+          echo ""
+
+          # Install dependencies to container (NOT to CephFS - NRP policy)
           echo "Installing Python dependencies..."
           pip install --no-cache-dir \
             httpx pandas tqdm \
@@ -141,14 +148,16 @@ spec:
           # Build arguments based on experiment type
           {% if experiment == "study1_exp1" %}
           # Study 1 Experiment 1: Raw text responses (uses vLLM server)
-          SCRIPT="/code/src/query_study1_exp1.py"
+          SCRIPT="/tmp/grace-project/src/query_study1_exp1.py"
+          INPUT_DATA="/tmp/grace-project/data/study1.csv"
           OUTPUT_FILE="${OUTPUT_DIR}/study1_exp1_results.json"
           REASONING_OUTPUT="${OUTPUT_DIR}/study1_exp1_reasoning.jsonl"
           EXTRA_ARGS="--endpoint http://{{ model.deployment.service_name }}:8000 --reasoning-output $REASONING_OUTPUT"
 
           {% elif experiment == "study1_exp2" %}
           # Study 1 Experiment 2: Probability distributions (direct model scoring)
-          SCRIPT="/code/src/query_study1_exp2.py"
+          SCRIPT="/tmp/grace-project/src/query_study1_exp2.py"
+          INPUT_DATA="/tmp/grace-project/data/study1.csv"
           OUTPUT_FILE="${OUTPUT_DIR}/study1_exp2_results.json"
           EXTRA_ARGS="--model-path {{ model.huggingface_name }}"
           {% if model.get('reasoning_model', false) %}
@@ -157,13 +166,15 @@ spec:
 
           {% elif experiment == "study2_exp1" %}
           # Study 2 Experiment 1: Politeness raw responses (uses vLLM server)
-          SCRIPT="/code/src/query_study2_exp1.py"
+          SCRIPT="/tmp/grace-project/src/query_study2_exp1.py"
+          INPUT_DATA="/tmp/grace-project/data/study2.csv"
           OUTPUT_FILE="${OUTPUT_DIR}/study2_exp1_results.json"
           EXTRA_ARGS="--endpoint http://{{ model.deployment.service_name }}:8000"
 
           {% elif experiment == "study2_exp2" %}
           # Study 2 Experiment 2: Politeness probability distributions (direct model scoring)
-          SCRIPT="/code/src/query_study2_exp2.py"
+          SCRIPT="/tmp/grace-project/src/query_study2_exp2.py"
+          INPUT_DATA="/tmp/grace-project/data/study2.csv"
           OUTPUT_FILE="${OUTPUT_DIR}/study2_exp2_results.json"
           EXTRA_ARGS="--model-path {{ model.huggingface_name }}"
           {% if model.get('reasoning_model', false) %}
@@ -179,11 +190,14 @@ spec:
           fi
 
           # Log the command
-          echo "Running: python $SCRIPT --input {{ input_data }} --output $OUTPUT_FILE --model-name {{ model.huggingface_name }} --seed $SEED --replication-id $REPLICATION_ID $SHUFFLE_ARG $EXTRA_ARGS"
+          echo "Running: python $SCRIPT --input $INPUT_DATA --output $OUTPUT_FILE --model-name {{ model.huggingface_name }} --seed $SEED --replication-id $REPLICATION_ID $SHUFFLE_ARG $EXTRA_ARGS"
+
+          # Set Python path
+          export PYTHONPATH=/tmp/grace-project
 
           # Run the experiment
           python "$SCRIPT" \
-            --input {{ input_data }} \
+            --input "$INPUT_DATA" \
             --output "$OUTPUT_FILE" \
             --model-name "{{ model.huggingface_name }}" \
             --seed "$SEED" \
@@ -221,10 +235,6 @@ spec:
             {% endif %}
 
         volumeMounts:
-        - name: code
-          mountPath: /code
-          readOnly: true
-
         - name: results
           mountPath: /results
 
@@ -235,10 +245,6 @@ spec:
         {% endif %}
 
       volumes:
-      - name: code
-        persistentVolumeClaim:
-          claimName: grace-code
-
       - name: results
         persistentVolumeClaim:
           claimName: {{ pvcs.results }}
