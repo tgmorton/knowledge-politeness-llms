@@ -19,7 +19,7 @@
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: {{ model_key }}-{{ experiment }}-replicated
+  name: {{ model_key }}-{{ experiment | replace('_', '-') }}-replicated
   namespace: {{ namespace }}
   labels:
     app: grace-experiments
