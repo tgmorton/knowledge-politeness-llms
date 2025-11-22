@@ -101,6 +101,7 @@ def generate_job_manifest(
 
     # Get common settings
     common = models_config['common']
+    experiments_common = experiments_config['common']
 
     # Set up Jinja2 environment
     template_dir = Path(__file__).parent.parent / 'templates'
@@ -115,9 +116,9 @@ def generate_job_manifest(
         'num_replications': num_replications,
         'base_seed': base_seed,
         'shuffle': 'true' if shuffle else 'false',
-        'image': f"{common['image_registry']}:latest",
+        'image': experiments_common['image'],  # Use PyTorch base image from experiments.yaml
         'namespace': common['namespace'],
-        'pvcs': common['pvcs'],
+        'pvcs': experiments_common['pvcs'],  # Use PVCs from experiments.yaml
         'input_data': input_data,
     }
 
